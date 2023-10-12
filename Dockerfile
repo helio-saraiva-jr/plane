@@ -16,7 +16,7 @@ FROM node:18-alpine AS installer
 
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
-ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+ARG NEXT_PUBLIC_API_BASE_URL=plane-web-nu.vercel.app
 # First install the dependencies (as they change less often)
 COPY .gitignore .gitignore
 COPY --from=builder /app/out/json/ .
@@ -117,7 +117,7 @@ COPY nginx/nginx-single-docker-image.conf /etc/nginx/http.d/default.conf
 
 COPY nginx/supervisor.conf /code/supervisor.conf
 
-ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+ARG NEXT_PUBLIC_API_BASE_URL=plane-web-nu.vercel.app
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL \
     BUILT_NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 
