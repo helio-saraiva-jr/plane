@@ -1,39 +1,50 @@
+import { useRouter } from "next/router";
 import { observer } from "mobx-react-lite";
-import { DragDropContext, DropResult } from "@hello-pangea/dnd";
-
-// mobx store
-import { useMobxStore } from "lib/mobx/store-provider";
+//hooks
+import { useIssues } from "hooks/store";
 // components
-import { CalendarChart } from "components/issues";
+import { CycleIssueQuickActions } from "components/issues";
 // types
-import { IIssueGroupedStructure } from "store/issue";
+import { TIssue } from "@plane/types";
+import { EIssueActions } from "../../types";
+import { BaseCalendarRoot } from "../base-calendar-root";
+import { EIssuesStoreType } from "constants/issue";
+import { useMemo } from "react";
 
 export const CycleCalendarLayout: React.FC = observer(() => {
-  const { cycleIssue: cycleIssueStore, issueFilter: issueFilterStore } = useMobxStore();
+  const { issues, issuesFilter } = useIssues(EIssuesStoreType.CYCLE);
 
-  // TODO: add drag and drop functionality
-  const onDragEnd = (result: DropResult) => {
-    if (!result) return;
+  const router = useRouter();
+  const { workspaceSlug, projectId, cycleId } = router.query;
 
-    // return if not dropped on the correct place
-    if (!result.destination) return;
+  const issueActions = useMemo(
+    () => ({
+      [EIssueActions.UPDATE]: async (issue: TIssue) => {
+        if (!workspaceSlug || !cycleId) return;
 
-    // return if dropped on the same date
-    if (result.destination.droppableId === result.source.droppableId) return;
+        await issues.updateIssue(workspaceSlug.toString(), issue.project_id, issue.id, issue, cycleId.toString());
+      },
+      [EIssueActions.DELETE]: async (issue: TIssue) => {
+        if (!workspaceSlug || !cycleId) return;
+        await issues.removeIssue(workspaceSlug.toString(), issue.project_id, issue.id, cycleId.toString());
+      },
+      [EIssueActions.REMOVE]: async (issue: TIssue) => {
+        if (!workspaceSlug || !cycleId || !projectId) return;
+        await issues.removeIssueFromCycle(workspaceSlug.toString(), issue.project_id, cycleId.toString(), issue.id);
+      },
+    }),
+    [issues, workspaceSlug, cycleId, projectId]
+  );
 
-    // issueKanBanViewStore?.handleDragDrop(result.source, result.destination);
-  };
-
-  const issues = cycleIssueStore.getIssues;
+  if (!cycleId) return null;
 
   return (
-    <div className="h-full w-full pt-4 bg-custom-background-100 overflow-hidden">
-      <DragDropContext onDragEnd={onDragEnd}>
-        <CalendarChart
-          issues={issues as IIssueGroupedStructure | null}
-          layout={issueFilterStore.userDisplayFilters.calendar?.layout}
-        />
-      </DragDropContext>
-    </div>
+    <BaseCalendarRoot
+      issueStore={issues}
+      issuesFilterStore={issuesFilter}
+      QuickActions={CycleIssueQuickActions}
+      issueActions={issueActions}
+      viewId={cycleId.toString()}
+    />
   );
 });

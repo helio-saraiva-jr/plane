@@ -4,11 +4,11 @@ import useSWRInfinite from "swr/infinite";
 // services
 import { ProjectService } from "services/project";
 // ui
-import { CustomSearchSelect } from "components/ui";
+import { CustomSearchSelect } from "@plane/ui";
 // helpers
 import { truncateText } from "helpers/string.helper";
 // types
-import { IWorkspaceIntegration } from "types";
+import { IWorkspaceIntegration } from "@plane/types";
 
 type Props = {
   integration: IWorkspaceIntegration;

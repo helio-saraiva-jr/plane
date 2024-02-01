@@ -1,13 +1,13 @@
 // ui
-import { CustomMenu } from "components/ui";
+import { CustomMenu } from "@plane/ui";
 // icons
-import { TrashIcon } from "@heroicons/react/24/outline";
+import { Trash2 } from "lucide-react";
 // helpers
-import { renderShortDateWithYearFormat } from "helpers/date-time.helper";
+import { renderFormattedDate } from "helpers/date-time.helper";
 // types
-import { IImporterService } from "types";
+import { IImporterService } from "@plane/types";
 // constants
-import { IMPORTERS_EXPORTERS_LIST } from "constants/workspace";
+import { IMPORTERS_LIST } from "constants/workspace";
 
 type Props = {
   service: IImporterService;
@@ -21,10 +21,8 @@ export const SingleImport: React.FC<Props> = ({ service, refreshing, handleDelet
       <h4 className="flex items-center gap-2 text-sm">
         <span>
           Import from{" "}
-          <span className="font-medium">
-            {IMPORTERS_EXPORTERS_LIST.find((i) => i.provider === service.service)?.title}
-          </span>{" "}
-          to <span className="font-medium">{service.project_detail.name}</span>
+          <span className="font-medium">{IMPORTERS_LIST.find((i) => i.provider === service.service)?.title}</span> to{" "}
+          <span className="font-medium">{service.project_detail.name}</span>
         </span>
         <span
           className={`rounded px-2 py-0.5 text-xs capitalize ${
@@ -41,14 +39,14 @@ export const SingleImport: React.FC<Props> = ({ service, refreshing, handleDelet
         </span>
       </h4>
       <div className="mt-2 flex items-center gap-2 text-xs text-custom-text-200">
-        <span>{renderShortDateWithYearFormat(service.created_at)}</span>|
+        <span>{renderFormattedDate(service.created_at)}</span>|
         <span>Imported by {service.initiated_by_detail.display_name}</span>
       </div>
     </div>
     <CustomMenu ellipsis>
       <CustomMenu.MenuItem onClick={handleDelete}>
         <span className="flex items-center justify-start gap-2">
-          <TrashIcon className="h-3.5 w-3.5" />
+          <Trash2 className="h-3.5 w-3.5" />
           Delete import
         </span>
       </CustomMenu.MenuItem>

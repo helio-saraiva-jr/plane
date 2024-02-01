@@ -1,5 +1,5 @@
 // types
-import { TIssuePriorities } from "types";
+import { TIssuePriorities } from "@plane/types";
 
 type Props = {
   priority: TIssuePriorities | null;

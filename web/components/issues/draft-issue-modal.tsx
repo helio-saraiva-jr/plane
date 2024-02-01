@@ -1,45 +1,29 @@
 import React, { useEffect, useState } from "react";
-
 import { useRouter } from "next/router";
-
+import { observer } from "mobx-react-lite";
 import { mutate } from "swr";
-
-// headless ui
 import { Dialog, Transition } from "@headlessui/react";
 // services
-import { IssueService, IssueDraftService } from "services/issue";
+import { IssueService } from "services/issue";
 import { ModuleService } from "services/module.service";
 // hooks
-import useUser from "hooks/use-user";
-import useIssuesView from "hooks/use-issues-view";
 import useToast from "hooks/use-toast";
 import useLocalStorage from "hooks/use-local-storage";
-import useProjects from "hooks/use-projects";
-import useMyIssues from "hooks/my-issues/use-my-issues";
+import { useIssues, useProject, useUser } from "hooks/store";
 // components
 import { DraftIssueForm } from "components/issues";
 // types
-import type { IIssue } from "types";
+import type { TIssue } from "@plane/types";
+import { EIssuesStoreType } from "constants/issue";
 // fetch-keys
-import {
-  PROJECT_ISSUES_DETAILS,
-  USER_ISSUE,
-  SUB_ISSUES,
-  PROJECT_ISSUES_LIST_WITH_PARAMS,
-  CYCLE_ISSUES_WITH_PARAMS,
-  MODULE_ISSUES_WITH_PARAMS,
-  VIEW_ISSUES,
-  PROJECT_DRAFT_ISSUES_LIST_WITH_PARAMS,
-  CYCLE_DETAILS,
-  MODULE_DETAILS,
-} from "constants/fetch-keys";
+import { PROJECT_ISSUES_DETAILS, USER_ISSUE, SUB_ISSUES } from "constants/fetch-keys";
 
 interface IssuesModalProps {
-  data?: IIssue | null;
+  data?: TIssue | null;
   handleClose: () => void;
   isOpen: boolean;
   isUpdatingSingleIssue?: boolean;
-  prePopulateData?: Partial<IIssue>;
+  prePopulateData?: Partial<TIssue>;
   fieldsToShow?: (
     | "project"
     | "name"
@@ -54,15 +38,14 @@ interface IssuesModalProps {
     | "parent"
     | "all"
   )[];
-  onSubmit?: (data: Partial<IIssue>) => Promise<void> | void;
+  onSubmit?: (data: Partial<TIssue>) => Promise<void> | void;
 }
 
 // services
 const issueService = new IssueService();
-const issueDraftService = new IssueDraftService();
 const moduleService = new ModuleService();
 
-export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = (props) => {
+export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = observer((props) => {
   const {
     data,
     handleClose,
@@ -76,20 +59,18 @@ export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = (props) =
   // states
   const [createMore, setCreateMore] = useState(false);
   const [activeProject, setActiveProject] = useState<string | null>(null);
-  const [prePopulateData, setPreloadedData] = useState<Partial<IIssue> | undefined>(undefined);
-
+  const [prePopulateData, setPreloadedData] = useState<Partial<TIssue> | undefined>(undefined);
+  // router
   const router = useRouter();
-  const { workspaceSlug, projectId, cycleId, moduleId, viewId } = router.query;
-
-  const { displayFilters, params } = useIssuesView();
-  const { ...viewGanttParams } = params;
-
-  const { user } = useUser();
-  const { projects } = useProjects();
+  const { workspaceSlug, projectId, cycleId, moduleId } = router.query;
+  // store
+  const { issues: draftIssues } = useIssues(EIssuesStoreType.DRAFT);
+  const { currentUser } = useUser();
+  const { workspaceProjectIds: workspaceProjects } = useProject();
+  // derived values
+  const projects = workspaceProjects;
 
   const { clearValue: clearDraftIssueLocalStorage } = useLocalStorage("draftedIssue", {});
-
-  const { groupedIssues, mutateMyIssues } = useMyIssues(workspaceSlug?.toString());
 
   const { setToastAlert } = useToast();
 
@@ -106,14 +87,14 @@ export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = (props) =
   useEffect(() => {
     setPreloadedData(prePopulateDataProps ?? {});
 
-    if (cycleId && !prePopulateDataProps?.cycle) {
+    if (cycleId && !prePopulateDataProps?.cycle_id) {
       setPreloadedData((prevData) => ({
         ...(prevData ?? {}),
         ...prePopulateDataProps,
         cycle: cycleId.toString(),
       }));
     }
-    if (moduleId && !prePopulateDataProps?.module) {
+    if (moduleId && !prePopulateDataProps?.module_ids) {
       setPreloadedData((prevData) => ({
         ...(prevData ?? {}),
         ...prePopulateDataProps,
@@ -122,27 +103,27 @@ export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = (props) =
     }
     if (
       (router.asPath.includes("my-issues") || router.asPath.includes("assigned")) &&
-      !prePopulateDataProps?.assignees
+      !prePopulateDataProps?.assignee_ids
     ) {
       setPreloadedData((prevData) => ({
         ...(prevData ?? {}),
         ...prePopulateDataProps,
-        assignees: prePopulateDataProps?.assignees ?? [user?.id ?? ""],
+        assignees: prePopulateDataProps?.assignee_ids ?? [currentUser?.id ?? ""],
       }));
     }
-  }, [prePopulateDataProps, cycleId, moduleId, router.asPath, user?.id]);
+  }, [prePopulateDataProps, cycleId, moduleId, router.asPath, currentUser?.id]);
 
   useEffect(() => {
     setPreloadedData(prePopulateDataProps ?? {});
 
-    if (cycleId && !prePopulateDataProps?.cycle) {
+    if (cycleId && !prePopulateDataProps?.cycle_id) {
       setPreloadedData((prevData) => ({
         ...(prevData ?? {}),
         ...prePopulateDataProps,
         cycle: cycleId.toString(),
       }));
     }
-    if (moduleId && !prePopulateDataProps?.module) {
+    if (moduleId && !prePopulateDataProps?.module_ids) {
       setPreloadedData((prevData) => ({
         ...(prevData ?? {}),
         ...prePopulateDataProps,
@@ -151,15 +132,15 @@ export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = (props) =
     }
     if (
       (router.asPath.includes("my-issues") || router.asPath.includes("assigned")) &&
-      !prePopulateDataProps?.assignees
+      !prePopulateDataProps?.assignee_ids
     ) {
       setPreloadedData((prevData) => ({
         ...(prevData ?? {}),
         ...prePopulateDataProps,
-        assignees: prePopulateDataProps?.assignees ?? [user?.id ?? ""],
+        assignees: prePopulateDataProps?.assignee_ids ?? [currentUser?.id ?? ""],
       }));
     }
-  }, [prePopulateDataProps, cycleId, moduleId, router.asPath, user?.id]);
+  }, [prePopulateDataProps, cycleId, moduleId, router.asPath, currentUser?.id]);
 
   useEffect(() => {
     // if modal is closed, reset active project to null
@@ -171,44 +152,35 @@ export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = (props) =
 
     // if data is present, set active project to the project of the
     // issue. This has more priority than the project in the url.
-    if (data && data.project) return setActiveProject(data.project);
+    if (data && data.project_id) return setActiveProject(data.project_id);
 
-    if (prePopulateData && prePopulateData.project && !activeProject) return setActiveProject(prePopulateData.project);
+    if (prePopulateData && prePopulateData.project_id && !activeProject)
+      return setActiveProject(prePopulateData.project_id);
 
-    if (prePopulateData && prePopulateData.project && !activeProject) return setActiveProject(prePopulateData.project);
+    if (prePopulateData && prePopulateData.project_id && !activeProject)
+      return setActiveProject(prePopulateData.project_id);
 
     // if data is not present, set active project to the project
     // in the url. This has the least priority.
     if (projects && projects.length > 0 && !activeProject)
-      setActiveProject(projects?.find((p) => p.id === projectId)?.id ?? projects?.[0].id ?? null);
+      setActiveProject(projects?.find((id) => id === projectId) ?? projects?.[0] ?? null);
   }, [activeProject, data, projectId, projects, isOpen, prePopulateData]);
 
-  const ganttFetchKey = cycleId
-    ? CYCLE_ISSUES_WITH_PARAMS(cycleId.toString())
-    : moduleId
-    ? MODULE_ISSUES_WITH_PARAMS(moduleId.toString())
-    : viewId
-    ? VIEW_ISSUES(viewId.toString(), viewGanttParams)
-    : PROJECT_ISSUES_LIST_WITH_PARAMS(activeProject?.toString() ?? "");
+  const createDraftIssue = async (payload: Partial<TIssue>) => {
+    if (!workspaceSlug || !activeProject || !currentUser) return;
 
-  const createDraftIssue = async (payload: Partial<IIssue>) => {
-    if (!workspaceSlug || !activeProject || !user) return;
-
-    await issueDraftService
-      .createDraftIssue(workspaceSlug as string, activeProject ?? "", payload)
+    await draftIssues
+      .createIssue(workspaceSlug as string, activeProject ?? "", payload)
       .then(async () => {
-        mutate(PROJECT_DRAFT_ISSUES_LIST_WITH_PARAMS(activeProject ?? "", params));
-
-        if (groupedIssues) mutateMyIssues();
-
+        await draftIssues.fetchIssues(workspaceSlug as string, activeProject ?? "", "mutation");
         setToastAlert({
           type: "success",
           title: "Success!",
           message: "Issue created successfully.",
         });
 
-        if (payload.assignees_list?.some((assignee) => assignee === user?.id))
-          mutate(USER_ISSUE(workspaceSlug as string));
+        if (payload.assignee_ids?.some((assignee) => assignee === currentUser?.id))
+          mutate(USER_ISSUE(workspaceSlug.toString()));
       })
       .catch(() => {
         setToastAlert({
@@ -221,24 +193,20 @@ export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = (props) =
     if (!createMore) onClose();
   };
 
-  const updateDraftIssue = async (payload: Partial<IIssue>) => {
-    if (!user) return;
-
-    await issueDraftService
-      .updateDraftIssue(workspaceSlug as string, activeProject ?? "", data?.id ?? "", payload)
+  const updateDraftIssue = async (payload: Partial<TIssue>) => {
+    await draftIssues
+      .updateIssue(workspaceSlug as string, activeProject ?? "", data?.id ?? "", payload)
       .then((res) => {
         if (isUpdatingSingleIssue) {
-          mutate<IIssue>(PROJECT_ISSUES_DETAILS, (prevData) => ({ ...prevData, ...res }), false);
+          mutate<TIssue>(PROJECT_ISSUES_DETAILS, (prevData) => ({ ...prevData, ...res }), false);
         } else {
-          if (payload.parent) mutate(SUB_ISSUES(payload.parent.toString()));
-          mutate(PROJECT_ISSUES_LIST_WITH_PARAMS(activeProject ?? "", params));
-          mutate(PROJECT_DRAFT_ISSUES_LIST_WITH_PARAMS(activeProject ?? "", params));
+          if (payload.parent_id) mutate(SUB_ISSUES(payload.parent_id.toString()));
         }
 
-        if (!payload.is_draft) {
-          if (payload.cycle && payload.cycle !== "") addIssueToCycle(res.id, payload.cycle);
-          if (payload.module && payload.module !== "") addIssueToModule(res.id, payload.module);
-        }
+        // if (!payload.is_draft) { // TODO: check_with_backend
+        //   if (payload.cycle_id && payload.cycle_id !== "") addIssueToCycle(res.id, payload.cycle_id);
+        //   if (payload.module_id && payload.module_id !== "") addIssueToModule(res.id, payload.module_id);
+        // }
 
         if (!createMore) onClose();
 
@@ -260,61 +228,27 @@ export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = (props) =
   const addIssueToCycle = async (issueId: string, cycleId: string) => {
     if (!workspaceSlug || !activeProject) return;
 
-    await issueService
-      .addIssueToCycle(
-        workspaceSlug as string,
-        activeProject ?? "",
-        cycleId,
-        {
-          issues: [issueId],
-        },
-        user
-      )
-      .then(() => {
-        if (cycleId) {
-          mutate(CYCLE_ISSUES_WITH_PARAMS(cycleId, params));
-          mutate(CYCLE_DETAILS(cycleId as string));
-        }
-      });
+    await issueService.addIssueToCycle(workspaceSlug as string, activeProject ?? "", cycleId, {
+      issues: [issueId],
+    });
   };
 
-  const addIssueToModule = async (issueId: string, moduleId: string) => {
+  const addIssueToModule = async (issueId: string, moduleIds: string[]) => {
     if (!workspaceSlug || !activeProject) return;
 
-    await moduleService
-      .addIssuesToModule(
-        workspaceSlug as string,
-        activeProject ?? "",
-        moduleId as string,
-        {
-          issues: [issueId],
-        },
-        user
-      )
-      .then(() => {
-        if (moduleId) {
-          mutate(MODULE_ISSUES_WITH_PARAMS(moduleId as string, params));
-          mutate(MODULE_DETAILS(moduleId as string));
-        }
-      });
+    await moduleService.addModulesToIssue(workspaceSlug as string, activeProject ?? "", issueId as string, {
+      modules: moduleIds,
+    });
   };
 
-  const createIssue = async (payload: Partial<IIssue>) => {
+  const createIssue = async (payload: Partial<TIssue>) => {
     if (!workspaceSlug || !activeProject) return;
 
     await issueService
-      .createIssues(workspaceSlug as string, activeProject ?? "", payload, user)
+      .createIssue(workspaceSlug.toString(), activeProject, payload)
       .then(async (res) => {
-        mutate(PROJECT_ISSUES_LIST_WITH_PARAMS(activeProject ?? "", params));
-        if (payload.cycle && payload.cycle !== "") await addIssueToCycle(res.id, payload.cycle);
-        if (payload.module && payload.module !== "") await addIssueToModule(res.id, payload.module);
-
-        if (displayFilters.layout === "gantt_chart")
-          mutate(ganttFetchKey, {
-            start_target_date: true,
-            order_by: "sort_order",
-          });
-        if (groupedIssues) mutateMyIssues();
+        if (payload.cycle_id && payload.cycle_id !== "") await addIssueToCycle(res.id, payload.cycle_id);
+        if (payload.module_ids && payload.module_ids.length > 0) await addIssueToModule(res.id, payload.module_ids);
 
         setToastAlert({
           type: "success",
@@ -324,10 +258,10 @@ export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = (props) =
 
         if (!createMore) onClose();
 
-        if (payload.assignees_list?.some((assignee) => assignee === user?.id))
+        if (payload.assignee_ids?.some((assignee) => assignee === currentUser?.id))
           mutate(USER_ISSUE(workspaceSlug as string));
 
-        if (payload.parent && payload.parent !== "") mutate(SUB_ISSUES(payload.parent));
+        if (payload.parent_id && payload.parent_id !== "") mutate(SUB_ISSUES(payload.parent_id));
       })
       .catch(() => {
         setToastAlert({
@@ -339,16 +273,14 @@ export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = (props) =
   };
 
   const handleFormSubmit = async (
-    formData: Partial<IIssue>,
+    formData: Partial<TIssue>,
     action: "createDraft" | "createNewIssue" | "updateDraft" | "convertToNewIssue" = "createDraft"
   ) => {
     if (!workspaceSlug || !activeProject) return;
 
-    const payload: Partial<IIssue> = {
+    const payload: Partial<TIssue> = {
       ...formData,
-      assignees_list: formData.assignees ?? [],
-      labels_list: formData.labels ?? [],
-      description: formData.description ?? "",
+      // description: formData.description ?? "",
       description_html: formData.description_html ?? "<p></p>",
     };
 
@@ -376,7 +308,7 @@ export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = (props) =
             leaveFrom="opacity-100"
             leaveTo="opacity-0"
           >
-            <div className="fixed inset-0 bg-custom-backdrop bg-opacity-50 transition-opacity" />
+            <div className="fixed inset-0 bg-custom-backdrop transition-opacity" />
           </Transition.Child>
 
           <div className="fixed inset-0 z-10 overflow-y-auto">
@@ -390,7 +322,7 @@ export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = (props) =
                 leaveFrom="opacity-100 translate-y-0 sm:scale-100"
                 leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
               >
-                <Dialog.Panel className="relative transform rounded-lg border border-custom-border-200 bg-custom-background-100 p-5 text-left shadow-xl transition-all sm:w-full sm:max-w-2xl">
+                <Dialog.Panel className="relative transform rounded-lg border border-custom-border-200 bg-custom-background-100 p-5 text-left shadow-custom-shadow-md transition-all sm:w-full sm:max-w-4xl">
                   <DraftIssueForm
                     isOpen={isOpen}
                     handleFormSubmit={handleFormSubmit}
@@ -403,7 +335,7 @@ export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = (props) =
                     projectId={activeProject ?? ""}
                     setActiveProject={setActiveProject}
                     status={data ? true : false}
-                    user={user}
+                    user={currentUser ?? undefined}
                     fieldsToShow={fieldsToShow}
                   />
                 </Dialog.Panel>
@@ -414,4 +346,4 @@ export const CreateUpdateDraftIssueModal: React.FC<IssuesModalProps> = (props) =
       </Transition.Root>
     </>
   );
-};
+});

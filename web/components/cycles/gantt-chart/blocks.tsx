@@ -1,23 +1,19 @@
 import { useRouter } from "next/router";
-
 // ui
-import { Tooltip } from "@plane/ui";
-// icons
-import { ContrastIcon } from "components/icons";
+import { Tooltip, ContrastIcon } from "@plane/ui";
 // helpers
-import { getDateRangeStatus, renderShortDate } from "helpers/date-time.helper";
+import { renderFormattedDate } from "helpers/date-time.helper";
 // types
-import { ICycle } from "types";
+import { ICycle } from "@plane/types";
 
 export const CycleGanttBlock = ({ data }: { data: ICycle }) => {
   const router = useRouter();
   const { workspaceSlug } = router.query;
 
-  const cycleStatus = getDateRangeStatus(data?.start_date, data?.end_date);
-
+  const cycleStatus = data.status.toLocaleLowerCase();
   return (
     <div
-      className="flex items-center relative h-full w-full rounded"
+      className="relative flex h-full w-full items-center rounded"
       style={{
         backgroundColor:
           cycleStatus === "current"
@@ -32,19 +28,19 @@ export const CycleGanttBlock = ({ data }: { data: ICycle }) => {
       }}
       onClick={() => router.push(`/${workspaceSlug}/projects/${data?.project}/cycles/${data?.id}`)}
     >
-      <div className="absolute top-0 left-0 h-full w-full bg-custom-background-100/50" />
+      <div className="absolute left-0 top-0 h-full w-full bg-custom-background-100/50" />
       <Tooltip
         tooltipContent={
           <div className="space-y-1">
             <h5>{data?.name}</h5>
             <div>
-              {renderShortDate(data?.start_date ?? "")} to {renderShortDate(data?.end_date ?? "")}
+              {renderFormattedDate(data?.start_date ?? "")} to {renderFormattedDate(data?.end_date ?? "")}
             </div>
           </div>
         }
         position="top-left"
       >
-        <div className="relative text-custom-text-100 text-sm truncate py-1 px-2.5 w-full">{data?.name}</div>
+        <div className="relative w-full truncate px-2.5 py-1 text-sm text-custom-text-100">{data?.name}</div>
       </Tooltip>
     </div>
   );
@@ -54,11 +50,11 @@ export const CycleGanttSidebarBlock = ({ data }: { data: ICycle }) => {
   const router = useRouter();
   const { workspaceSlug } = router.query;
 
-  const cycleStatus = getDateRangeStatus(data?.start_date, data?.end_date);
+  const cycleStatus = data.status.toLocaleLowerCase();
 
   return (
     <div
-      className="relative w-full flex items-center gap-2 h-full"
+      className="relative flex h-full w-full items-center gap-2"
       onClick={() => router.push(`/${workspaceSlug}/projects/${data?.project}/cycles/${data?.id}`)}
     >
       <ContrastIcon
@@ -75,7 +71,7 @@ export const CycleGanttSidebarBlock = ({ data }: { data: ICycle }) => {
             : ""
         }`}
       />
-      <h6 className="text-sm font-medium flex-grow truncate">{data?.name}</h6>
+      <h6 className="flex-grow truncate text-sm font-medium">{data?.name}</h6>
     </div>
   );
 };

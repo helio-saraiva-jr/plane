@@ -1,19 +1,18 @@
 import React, { useEffect } from "react";
 import { useRouter } from "next/router";
-import { mutate } from "swr";
+import { observer } from "mobx-react-lite";
 import { Controller, useForm } from "react-hook-form";
 import { TwitterPicker } from "react-color";
 import { Dialog, Popover, Transition } from "@headlessui/react";
-// services
-import { IssueLabelService } from "services/issue";
+import { ChevronDown } from "lucide-react";
+// hooks
+import { useLabel } from "hooks/store";
+import useToast from "hooks/use-toast";
 // ui
 import { Button, Input } from "@plane/ui";
-// icons
-import { ChevronDownIcon } from "@heroicons/react/24/outline";
 // types
-import type { IUser, IIssueLabels, IState } from "types";
+import type { IIssueLabel, IState } from "@plane/types";
 // constants
-import { PROJECT_ISSUE_LABELS } from "constants/fetch-keys";
 import { LABEL_COLOR_OPTIONS, getRandomLabelColor } from "constants/label";
 
 // types
@@ -21,8 +20,7 @@ type Props = {
   isOpen: boolean;
   projectId: string;
   handleClose: () => void;
-  onSuccess?: (response: IIssueLabels) => void;
-  user: IUser | undefined;
+  onSuccess?: (response: IIssueLabel) => void;
 };
 
 const defaultValues: Partial<IState> = {
@@ -30,12 +28,14 @@ const defaultValues: Partial<IState> = {
   color: "rgb(var(--color-text-200))",
 };
 
-const issueLabelService = new IssueLabelService();
-
-export const CreateLabelModal: React.FC<Props> = ({ isOpen, projectId, handleClose, user, onSuccess }) => {
+export const CreateLabelModal: React.FC<Props> = observer((props) => {
+  const { isOpen, projectId, handleClose, onSuccess } = props;
+  // router
   const router = useRouter();
   const { workspaceSlug } = router.query;
-
+  // store hooks
+  const { createLabel } = useLabel();
+  // form info
   const {
     formState: { errors, isSubmitting },
     handleSubmit,
@@ -43,9 +43,17 @@ export const CreateLabelModal: React.FC<Props> = ({ isOpen, projectId, handleClo
     control,
     reset,
     setValue,
-  } = useForm<IIssueLabels>({
+    setFocus,
+  } = useForm<IIssueLabel>({
     defaultValues,
   });
+
+  /**
+   * For setting focus on name input
+   */
+  useEffect(() => {
+    setFocus("name");
+  }, [setFocus, isOpen]);
 
   useEffect(() => {
     if (isOpen) setValue("color", getRandomLabelColor());
@@ -56,18 +64,23 @@ export const CreateLabelModal: React.FC<Props> = ({ isOpen, projectId, handleClo
     reset(defaultValues);
   };
 
-  const onSubmit = async (formData: IIssueLabels) => {
+  const { setToastAlert } = useToast();
+
+  const onSubmit = async (formData: IIssueLabel) => {
     if (!workspaceSlug) return;
 
-    await issueLabelService
-      .createIssueLabel(workspaceSlug as string, projectId as string, formData, user)
+    await createLabel(workspaceSlug.toString(), projectId.toString(), formData)
       .then((res) => {
-        mutate<IIssueLabels[]>(PROJECT_ISSUE_LABELS(projectId), (prevData) => [res, ...(prevData ?? [])], false);
         onClose();
         if (onSuccess) onSuccess(res);
       })
       .catch((error) => {
-        console.log(error);
+        setToastAlert({
+          title: "Oops!",
+          type: "error",
+          message: error?.error ?? "Error while adding the label",
+        });
+        reset(formData);
       });
   };
 
@@ -83,7 +96,7 @@ export const CreateLabelModal: React.FC<Props> = ({ isOpen, projectId, handleClo
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-[#131313] bg-opacity-50 transition-opacity" />
+          <div className="fixed inset-0 bg-custom-backdrop transition-opacity" />
         </Transition.Child>
 
         <div className="fixed inset-0 z-10 overflow-y-auto">
@@ -97,7 +110,7 @@ export const CreateLabelModal: React.FC<Props> = ({ isOpen, projectId, handleClo
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative transform rounded-lg bg-custom-background-90 px-4 pt-5 pb-4 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
+              <Dialog.Panel className="relative transform rounded-lg bg-custom-background-100 px-4 pb-4 pt-5 text-left shadow-custom-shadow-md transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
                 <form onSubmit={handleSubmit(onSubmit)}>
                   <div>
                     <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-custom-text-100">
@@ -120,7 +133,7 @@ export const CreateLabelModal: React.FC<Props> = ({ isOpen, projectId, handleClo
                                   }}
                                 />
                               )}
-                              <ChevronDownIcon
+                              <ChevronDown
                                 className={`ml-2 h-5 w-5 group-hover:text-custom-text-200 ${
                                   open ? "text-gray-600" : "text-gray-400"
                                 }`}
@@ -157,7 +170,7 @@ export const CreateLabelModal: React.FC<Props> = ({ isOpen, projectId, handleClo
                           </>
                         )}
                       </Popover>
-                      <div className="flex w-full flex-col gap-0.5 justify-center">
+                      <div className="flex w-full flex-col justify-center gap-0.5">
                         <Controller
                           control={control}
                           name="name"
@@ -172,9 +185,10 @@ export const CreateLabelModal: React.FC<Props> = ({ isOpen, projectId, handleClo
                               value={value}
                               onChange={onChange}
                               ref={ref}
+                              tabIndex={1}
                               hasError={Boolean(errors.name)}
                               placeholder="Label title"
-                              className="resize-none text-xl w-full"
+                              className="w-full resize-none text-xl"
                             />
                           )}
                         />
@@ -182,10 +196,10 @@ export const CreateLabelModal: React.FC<Props> = ({ isOpen, projectId, handleClo
                     </div>
                   </div>
                   <div className="mt-5 flex justify-end gap-2">
-                    <Button variant="neutral-primary" onClick={onClose}>
+                    <Button variant="neutral-primary" size="sm" onClick={onClose}>
                       Cancel
                     </Button>
-                    <Button variant="primary" type="submit" loading={isSubmitting}>
+                    <Button variant="primary" size="sm" type="submit" loading={isSubmitting}>
                       {isSubmitting ? "Creating Label..." : "Create Label"}
                     </Button>
                   </div>
@@ -197,4 +211,4 @@ export const CreateLabelModal: React.FC<Props> = ({ isOpen, projectId, handleClo
       </Dialog>
     </Transition.Root>
   );
-};
+});

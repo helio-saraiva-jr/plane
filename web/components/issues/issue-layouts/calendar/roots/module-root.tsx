@@ -1,39 +1,50 @@
+import { useRouter } from "next/router";
 import { observer } from "mobx-react-lite";
-import { DragDropContext, DropResult } from "@hello-pangea/dnd";
-
-// mobx store
-import { useMobxStore } from "lib/mobx/store-provider";
+// hoks
+import { useIssues } from "hooks/store";
 // components
-import { CalendarChart } from "components/issues";
+import { ModuleIssueQuickActions } from "components/issues";
 // types
-import { IIssueGroupedStructure } from "store/issue";
+import { TIssue } from "@plane/types";
+import { EIssueActions } from "../../types";
+import { BaseCalendarRoot } from "../base-calendar-root";
+import { EIssuesStoreType } from "constants/issue";
+import { useMemo } from "react";
 
 export const ModuleCalendarLayout: React.FC = observer(() => {
-  const { moduleIssue: moduleIssueStore, issueFilter: issueFilterStore } = useMobxStore();
-
-  // TODO: add drag and drop functionality
-  const onDragEnd = (result: DropResult) => {
-    if (!result) return;
-
-    // return if not dropped on the correct place
-    if (!result.destination) return;
-
-    // return if dropped on the same date
-    if (result.destination.droppableId === result.source.droppableId) return;
-
-    // issueKanBanViewStore?.handleDragDrop(result.source, result.destination);
+  const { issues, issuesFilter } = useIssues(EIssuesStoreType.MODULE);
+  const router = useRouter();
+  const { workspaceSlug, moduleId } = router.query as {
+    workspaceSlug: string;
+    projectId: string;
+    moduleId: string;
   };
 
-  const issues = moduleIssueStore.getIssues;
+  const issueActions = useMemo(
+    () => ({
+      [EIssueActions.UPDATE]: async (issue: TIssue) => {
+        if (!workspaceSlug || !moduleId) return;
+        await issues.updateIssue(workspaceSlug, issue.project_id, issue.id, issue, moduleId);
+      },
+      [EIssueActions.DELETE]: async (issue: TIssue) => {
+        if (!workspaceSlug || !moduleId) return;
+        await issues.removeIssue(workspaceSlug, issue.project_id, issue.id, moduleId);
+      },
+      [EIssueActions.REMOVE]: async (issue: TIssue) => {
+        if (!workspaceSlug || !moduleId) return;
+        await issues.removeIssueFromModule(workspaceSlug, issue.project_id, moduleId, issue.id);
+      },
+    }),
+    [issues, workspaceSlug, moduleId]
+  );
 
   return (
-    <div className="h-full w-full pt-4 bg-custom-background-100 overflow-hidden">
-      <DragDropContext onDragEnd={onDragEnd}>
-        <CalendarChart
-          issues={issues as IIssueGroupedStructure | null}
-          layout={issueFilterStore.userDisplayFilters.calendar?.layout}
-        />
-      </DragDropContext>
-    </div>
+    <BaseCalendarRoot
+      issueStore={issues}
+      issuesFilterStore={issuesFilter}
+      QuickActions={ModuleIssueQuickActions}
+      issueActions={issueActions}
+      viewId={moduleId}
+    />
   );
 });

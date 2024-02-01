@@ -1,39 +1,39 @@
+import { useRouter } from "next/router";
 import { observer } from "mobx-react-lite";
-import { DragDropContext, DropResult } from "@hello-pangea/dnd";
-
-// mobx store
-import { useMobxStore } from "lib/mobx/store-provider";
+// hooks
+import { useIssues } from "hooks/store";
 // components
-import { CalendarChart } from "components/issues";
+import { ProjectIssueQuickActions } from "components/issues";
+import { BaseCalendarRoot } from "../base-calendar-root";
 // types
-import { IIssueGroupedStructure } from "store/issue";
+import { TIssue } from "@plane/types";
+import { EIssueActions } from "../../types";
+// constants
+import { EIssuesStoreType } from "constants/issue";
 
-export const ProjectViewCalendarLayout: React.FC = observer(() => {
-  const { projectViewIssues: projectViewIssuesStore, issueFilter: issueFilterStore } = useMobxStore();
-
-  // TODO: add drag and drop functionality
-  const onDragEnd = (result: DropResult) => {
-    if (!result) return;
-
-    // return if not dropped on the correct place
-    if (!result.destination) return;
-
-    // return if dropped on the same date
-    if (result.destination.droppableId === result.source.droppableId) return;
-
-    // issueKanBanViewStore?.handleDragDrop(result.source, result.destination);
+export interface IViewCalendarLayout {
+  issueActions: {
+    [EIssueActions.DELETE]: (issue: TIssue) => Promise<void>;
+    [EIssueActions.UPDATE]?: (issue: TIssue) => Promise<void>;
+    [EIssueActions.REMOVE]?: (issue: TIssue) => Promise<void>;
   };
+}
 
-  const issues = projectViewIssuesStore.getIssues;
+export const ProjectViewCalendarLayout: React.FC<IViewCalendarLayout> = observer((props) => {
+  const { issueActions } = props;
+  // store
+  const { issues, issuesFilter } = useIssues(EIssuesStoreType.PROJECT_VIEW);
+  // router
+  const router = useRouter();
+  const { viewId } = router.query;
 
   return (
-    <div className="h-full w-full pt-4 bg-custom-background-100 overflow-hidden">
-      <DragDropContext onDragEnd={onDragEnd}>
-        <CalendarChart
-          issues={issues as IIssueGroupedStructure | null}
-          layout={issueFilterStore.userDisplayFilters.calendar?.layout}
-        />
-      </DragDropContext>
-    </div>
+    <BaseCalendarRoot
+      issueStore={issues}
+      issuesFilterStore={issuesFilter}
+      QuickActions={ProjectIssueQuickActions}
+      issueActions={issueActions}
+      viewId={viewId?.toString()}
+    />
   );
 });

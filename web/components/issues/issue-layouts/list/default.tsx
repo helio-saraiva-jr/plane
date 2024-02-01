@@ -1,132 +1,211 @@
-import React from "react";
 // components
-import { KanBanGroupByHeaderRoot } from "./headers/group-by-root";
-import { IssueBlock } from "./block";
+import { IssueBlocksList, ListQuickAddIssueForm } from "components/issues";
+// hooks
+import { useLabel, useMember, useProject, useProjectState } from "hooks/store";
+// types
+import {
+  GroupByColumnTypes,
+  TGroupedIssues,
+  TIssue,
+  IIssueDisplayProperties,
+  TIssueMap,
+  TUnGroupedIssues,
+} from "@plane/types";
+import { EIssueActions } from "../types";
 // constants
-import { ISSUE_STATE_GROUPS, ISSUE_PRIORITIES, getValueFromObject } from "constants/issue";
-// mobx
-import { observer } from "mobx-react-lite";
-// mobx
-import { useMobxStore } from "lib/mobx/store-provider";
-import { RootStore } from "store/root";
+import { HeaderGroupByCard } from "./headers/group-by-card";
+import { getGroupByColumns } from "../utils";
+import { TCreateModalStoreTypes } from "constants/issue";
 
-export interface IGroupByKanBan {
-  issues: any;
+export interface IGroupByList {
+  issueIds: TGroupedIssues | TUnGroupedIssues | any;
+  issuesMap: TIssueMap;
   group_by: string | null;
-  list: any;
-  listKey: string;
-  handleIssues?: (group_by: string | null, issue: any) => void;
-  display_properties: any;
+  handleIssues: (issue: TIssue, action: EIssueActions) => Promise<void>;
+  quickActions: (issue: TIssue) => React.ReactNode;
+  displayProperties: IIssueDisplayProperties | undefined;
+  enableIssueQuickAdd: boolean;
+  showEmptyGroup?: boolean;
+  canEditProperties: (projectId: string | undefined) => boolean;
+  quickAddCallback?: (
+    workspaceSlug: string,
+    projectId: string,
+    data: TIssue,
+    viewId?: string
+  ) => Promise<TIssue | undefined>;
+  disableIssueCreation?: boolean;
+  storeType: TCreateModalStoreTypes;
+  addIssuesToView?: (issueIds: string[]) => Promise<TIssue>;
+  viewId?: string;
 }
 
-const GroupByKanBan: React.FC<IGroupByKanBan> = observer(
-  ({ issues, group_by, list, listKey, handleIssues, display_properties }) => (
-    <div className="relative w-full h-full">
-      {list &&
-        list.length > 0 &&
-        list.map((_list: any) => (
-          <div className={`flex-shrink-0 flex flex-col`}>
-            <div className="flex-shrink-0 w-full bg-custom-background-90 py-1 sticky top-0 z-[2] px-3">
-              <KanBanGroupByHeaderRoot
-                column_id={getValueFromObject(_list, listKey) as string}
-                group_by={group_by}
-                issues_count={issues?.[getValueFromObject(_list, listKey) as string]?.length || 0}
-              />
-            </div>
-            <div className={`w-full h-full relative transition-all`}>
-              {issues && (
-                <IssueBlock
-                  columnId={getValueFromObject(_list, listKey) as string}
-                  issues={issues[getValueFromObject(_list, listKey) as string]}
-                  handleIssues={handleIssues}
-                  display_properties={display_properties}
-                />
-              )}
-            </div>
-          </div>
-        ))}
-    </div>
-  )
-);
+const GroupByList: React.FC<IGroupByList> = (props) => {
+  const {
+    issueIds,
+    issuesMap,
+    group_by,
+    handleIssues,
+    quickActions,
+    displayProperties,
+    enableIssueQuickAdd,
+    showEmptyGroup,
+    canEditProperties,
+    quickAddCallback,
+    viewId,
+    disableIssueCreation,
+    storeType,
+    addIssuesToView,
+  } = props;
+  // store hooks
+  const member = useMember();
+  const project = useProject();
+  const label = useLabel();
+  const projectState = useProjectState();
 
-export interface IKanBan {
-  issues: any;
-  group_by: string | null;
-  handleDragDrop?: (result: any) => void | undefined;
-  handleIssues?: (group_by: string | null, issue: any) => void;
-  display_properties: any;
-}
+  const list = getGroupByColumns(group_by as GroupByColumnTypes, project, label, projectState, member, true);
 
-export const List: React.FC<IKanBan> = observer(({ issues, group_by, handleIssues, display_properties }) => {
-  const { project: projectStore }: RootStore = useMobxStore();
+  if (!list) return null;
+
+  const prePopulateQuickAddData = (groupByKey: string | null, value: any) => {
+    const defaultState = projectState.projectStates?.find((state) => state.default);
+    let preloadedData: object = { state_id: defaultState?.id };
+
+    if (groupByKey === null) {
+      preloadedData = { ...preloadedData };
+    } else {
+      if (groupByKey === "state") {
+        preloadedData = { ...preloadedData, state_id: value };
+      } else if (groupByKey === "priority") {
+        preloadedData = { ...preloadedData, priority: value };
+      } else if (groupByKey === "labels" && value != "None") {
+        preloadedData = { ...preloadedData, label_ids: [value] };
+      } else if (groupByKey === "assignees" && value != "None") {
+        preloadedData = { ...preloadedData, assignee_ids: [value] };
+      } else if (groupByKey === "created_by") {
+        preloadedData = { ...preloadedData };
+      } else {
+        preloadedData = { ...preloadedData, [groupByKey]: value };
+      }
+    }
+
+    return preloadedData;
+  };
+
+  const validateEmptyIssueGroups = (issues: TIssue[]) => {
+    const issuesCount = issues?.length || 0;
+    if (!showEmptyGroup && issuesCount <= 0) return false;
+    return true;
+  };
+
+  const is_list = group_by === null ? true : false;
+
+  const isGroupByCreatedBy = group_by === "created_by";
 
   return (
-    <div className="relative w-full h-full">
-      {group_by && group_by === "state" && (
-        <GroupByKanBan
-          issues={issues}
-          group_by={group_by}
-          list={projectStore?.projectStates}
-          listKey={`id`}
-          handleIssues={handleIssues}
-          display_properties={display_properties}
-        />
-      )}
+    <div className="relative h-full w-full">
+      {list &&
+        list.length > 0 &&
+        list.map(
+          (_list: any) =>
+            validateEmptyIssueGroups(is_list ? issueIds : issueIds?.[_list.id]) && (
+              <div key={_list.id} className={`flex flex-shrink-0 flex-col`}>
+                <div className="sticky top-0 z-[2] w-full flex-shrink-0 border-b border-custom-border-200 bg-custom-background-90 px-3 py-1">
+                  <HeaderGroupByCard
+                    icon={_list.icon}
+                    title={_list.name || ""}
+                    count={is_list ? issueIds?.length || 0 : issueIds?.[_list.id]?.length || 0}
+                    issuePayload={_list.payload}
+                    disableIssueCreation={disableIssueCreation || isGroupByCreatedBy}
+                    storeType={storeType}
+                    addIssuesToView={addIssuesToView}
+                  />
+                </div>
 
-      {group_by && group_by === "state_detail.group" && (
-        <GroupByKanBan
-          issues={issues}
-          group_by={group_by}
-          list={ISSUE_STATE_GROUPS}
-          listKey={`key`}
-          handleIssues={handleIssues}
-          display_properties={display_properties}
-        />
-      )}
+                {issueIds && (
+                  <IssueBlocksList
+                    issueIds={is_list ? issueIds || 0 : issueIds?.[_list.id] || 0}
+                    issuesMap={issuesMap}
+                    handleIssues={handleIssues}
+                    quickActions={quickActions}
+                    displayProperties={displayProperties}
+                    canEditProperties={canEditProperties}
+                  />
+                )}
 
-      {group_by && group_by === "priority" && (
-        <GroupByKanBan
-          issues={issues}
-          group_by={group_by}
-          list={ISSUE_PRIORITIES}
-          listKey={`key`}
-          handleIssues={handleIssues}
-          display_properties={display_properties}
-        />
-      )}
-
-      {group_by && group_by === "labels" && (
-        <GroupByKanBan
-          issues={issues}
-          group_by={group_by}
-          list={projectStore?.projectLabels}
-          listKey={`id`}
-          handleIssues={handleIssues}
-          display_properties={display_properties}
-        />
-      )}
-
-      {group_by && group_by === "assignees" && (
-        <GroupByKanBan
-          issues={issues}
-          group_by={group_by}
-          list={projectStore?.projectMembers}
-          listKey={`member.id`}
-          handleIssues={handleIssues}
-          display_properties={display_properties}
-        />
-      )}
-
-      {group_by && group_by === "created_by" && (
-        <GroupByKanBan
-          issues={issues}
-          group_by={group_by}
-          list={projectStore?.projectMembers}
-          listKey={`member.id`}
-          handleIssues={handleIssues}
-          display_properties={display_properties}
-        />
-      )}
+                {enableIssueQuickAdd && !disableIssueCreation && !isGroupByCreatedBy && (
+                  <div className="sticky bottom-0 z-[1] w-full flex-shrink-0">
+                    <ListQuickAddIssueForm
+                      prePopulatedData={prePopulateQuickAddData(group_by, _list.id)}
+                      quickAddCallback={quickAddCallback}
+                      viewId={viewId}
+                    />
+                  </div>
+                )}
+              </div>
+            )
+        )}
     </div>
   );
-});
+};
+
+export interface IList {
+  issueIds: TGroupedIssues | TUnGroupedIssues | any;
+  issuesMap: TIssueMap;
+  group_by: string | null;
+  handleIssues: (issue: TIssue, action: EIssueActions) => Promise<void>;
+  quickActions: (issue: TIssue) => React.ReactNode;
+  displayProperties: IIssueDisplayProperties | undefined;
+  showEmptyGroup: boolean;
+  enableIssueQuickAdd: boolean;
+  canEditProperties: (projectId: string | undefined) => boolean;
+  quickAddCallback?: (
+    workspaceSlug: string,
+    projectId: string,
+    data: TIssue,
+    viewId?: string
+  ) => Promise<TIssue | undefined>;
+  viewId?: string;
+  disableIssueCreation?: boolean;
+  storeType: TCreateModalStoreTypes;
+  addIssuesToView?: (issueIds: string[]) => Promise<TIssue>;
+}
+
+export const List: React.FC<IList> = (props) => {
+  const {
+    issueIds,
+    issuesMap,
+    group_by,
+    handleIssues,
+    quickActions,
+    quickAddCallback,
+    viewId,
+    displayProperties,
+    showEmptyGroup,
+    enableIssueQuickAdd,
+    canEditProperties,
+    disableIssueCreation,
+    storeType,
+    addIssuesToView,
+  } = props;
+
+  return (
+    <div className="relative h-full w-full">
+      <GroupByList
+        issueIds={issueIds as TUnGroupedIssues}
+        issuesMap={issuesMap}
+        group_by={group_by}
+        handleIssues={handleIssues}
+        quickActions={quickActions}
+        displayProperties={displayProperties}
+        enableIssueQuickAdd={enableIssueQuickAdd}
+        showEmptyGroup={showEmptyGroup}
+        canEditProperties={canEditProperties}
+        quickAddCallback={quickAddCallback}
+        viewId={viewId}
+        disableIssueCreation={disableIssueCreation}
+        storeType={storeType}
+        addIssuesToView={addIssuesToView}
+      />
+    </div>
+  );
+};

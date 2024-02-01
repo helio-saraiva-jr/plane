@@ -10,7 +10,7 @@ import useToast from "./use-toast";
 // fetch-keys
 import { UNREAD_NOTIFICATIONS_COUNT, getPaginatedNotificationKey } from "constants/fetch-keys";
 // type
-import type { NotificationType, NotificationCount, IMarkAllAsReadPayload } from "types";
+import type { NotificationType, NotificationCount, IMarkAllAsReadPayload } from "@plane/types";
 
 const PER_PAGE = 30;
 
@@ -148,6 +148,8 @@ const useUserNotification = () => {
     handleReadMutation(isRead ? "unread" : "read");
     mutateNotification(notificationId, { read_at: isRead ? null : new Date() });
 
+    if (readNotification) removeNotification(notificationId);
+
     if (isRead) {
       await userNotificationServices
         .markUserNotificationAsUnread(workspaceSlug.toString(), notificationId)
@@ -262,6 +264,13 @@ const useUserNotification = () => {
 
     await userNotificationServices
       .markAllNotificationsAsRead(workspaceSlug.toString(), markAsReadParams)
+      .then(() => {
+        setToastAlert({
+          type: "success",
+          title: "Success!",
+          message: "All Notifications marked as read.",
+        });
+      })
       .catch(() => {
         setToastAlert({
           type: "error",

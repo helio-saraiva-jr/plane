@@ -1,54 +1,48 @@
-import { useRouter } from "next/router";
 import { observer } from "mobx-react-lite";
+import { useRouter } from "next/router";
 // hooks
-import { useMobxStore } from "lib/mobx/store-provider";
-import useProjectDetails from "hooks/use-project-details";
+import { useIssues, useModule } from "hooks/store";
 // components
-import { GanttChartRoot, renderIssueBlocksStructure } from "components/gantt-chart";
-import { IssueGanttBlock, IssueGanttSidebarBlock, IssuePeekOverview } from "components/issues";
-// types
-import { IIssueUnGroupedStructure } from "store/issue";
+import { BaseGanttRoot } from "./base-gantt-root";
+import { EIssuesStoreType } from "constants/issue";
+import { EIssueActions } from "../types";
+import { TIssue } from "@plane/types";
 
 export const ModuleGanttLayout: React.FC = observer(() => {
+  // router
   const router = useRouter();
-  const { workspaceSlug, projectId } = router.query;
+  const { workspaceSlug, moduleId } = router.query;
+  // store hooks
+  const { issues, issuesFilter } = useIssues(EIssuesStoreType.MODULE);
+  const { fetchModuleDetails } = useModule();
 
-  const { projectDetails } = useProjectDetails();
+  const issueActions = {
+    [EIssueActions.UPDATE]: async (issue: TIssue) => {
+      if (!workspaceSlug || !moduleId) return;
 
-  const { moduleIssue: moduleIssueStore, issueFilter: issueFilterStore } = useMobxStore();
+      await issues.updateIssue(workspaceSlug.toString(), issue.project_id, issue.id, issue, moduleId.toString());
+      fetchModuleDetails(workspaceSlug.toString(), issue.project_id, moduleId.toString());
+    },
+    [EIssueActions.DELETE]: async (issue: TIssue) => {
+      if (!workspaceSlug || !moduleId) return;
 
-  const appliedDisplayFilters = issueFilterStore.userDisplayFilters;
+      await issues.removeIssue(workspaceSlug.toString(), issue.project_id, issue.id, moduleId.toString());
+      fetchModuleDetails(workspaceSlug.toString(), issue.project_id, moduleId.toString());
+    },
+    [EIssueActions.REMOVE]: async (issue: TIssue) => {
+      if (!workspaceSlug || !moduleId || !issue.id) return;
 
-  const issues = moduleIssueStore.getIssues;
-
-  const isAllowed = projectDetails?.member_role === 20 || projectDetails?.member_role === 15;
+      await issues.removeIssueFromModule(workspaceSlug.toString(), issue.project_id, moduleId.toString(), issue.id);
+      fetchModuleDetails(workspaceSlug.toString(), issue.project_id, moduleId.toString());
+    },
+  };
 
   return (
-    <>
-      <IssuePeekOverview
-        projectId={projectId?.toString() ?? ""}
-        workspaceSlug={workspaceSlug?.toString() ?? ""}
-        readOnly={!isAllowed}
-      />
-      <div className="w-full h-full">
-        <GanttChartRoot
-          border={false}
-          title="Issues"
-          loaderTitle="Issues"
-          blocks={issues ? renderIssueBlocksStructure(issues as IIssueUnGroupedStructure) : null}
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          blockUpdateHandler={(block, payload) => {
-            // TODO: update mutation logic
-            // updateGanttIssue(block, payload, mutateGanttIssues, user, workspaceSlug?.toString())
-          }}
-          BlockRender={IssueGanttBlock}
-          SidebarBlockRender={IssueGanttSidebarBlock}
-          enableBlockLeftResize={isAllowed}
-          enableBlockRightResize={isAllowed}
-          enableBlockMove={isAllowed}
-          enableReorder={appliedDisplayFilters.order_by === "sort_order" && isAllowed}
-        />
-      </div>
-    </>
+    <BaseGanttRoot
+      issueActions={issueActions}
+      issueFiltersStore={issuesFilter}
+      issueStore={issues}
+      viewId={moduleId?.toString()}
+    />
   );
 });

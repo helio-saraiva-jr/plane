@@ -1,26 +1,27 @@
+import { v4 as uuidv4 } from "uuid";
 // helpers
 import { orderArrayBy } from "helpers/array.helper";
 // types
-import { IIssue, TIssueGroupByOptions, TIssueLayouts, TIssueOrderByOptions, TIssueParams } from "types";
+import { TIssue, TIssueGroupByOptions, TIssueLayouts, TIssueOrderByOptions, TIssueParams } from "@plane/types";
 // constants
 import { ISSUE_DISPLAY_FILTERS_BY_LAYOUT } from "constants/issue";
 
 type THandleIssuesMutation = (
-  formData: Partial<IIssue>,
+  formData: Partial<TIssue>,
   oldGroupTitle: string,
   selectedGroupBy: TIssueGroupByOptions,
   issueIndex: number,
   orderBy: TIssueOrderByOptions,
   prevData?:
     | {
-        [key: string]: IIssue[];
+        [key: string]: TIssue[];
       }
-    | IIssue[]
+    | TIssue[]
 ) =>
   | {
-      [key: string]: IIssue[];
+      [key: string]: TIssue[];
     }
-  | IIssue[]
+  | TIssue[]
   | undefined;
 
 export const handleIssuesMutation: THandleIssuesMutation = (
@@ -37,8 +38,6 @@ export const handleIssuesMutation: THandleIssuesMutation = (
     const updatedIssue = {
       ...prevData[issueIndex],
       ...formData,
-      assignees: formData?.assignees_list ?? prevData[issueIndex]?.assignees,
-      labels: formData?.labels_list ?? prevData[issueIndex]?.labels,
     };
 
     prevData.splice(issueIndex, 1, updatedIssue);
@@ -47,16 +46,14 @@ export const handleIssuesMutation: THandleIssuesMutation = (
   } else {
     const oldGroup = prevData[oldGroupTitle ?? ""] ?? [];
 
-    let newGroup: IIssue[] = [];
+    let newGroup: TIssue[] = [];
 
     if (selectedGroupBy === "priority") newGroup = prevData[formData.priority ?? ""] ?? [];
-    else if (selectedGroupBy === "state") newGroup = prevData[formData.state ?? ""] ?? [];
+    else if (selectedGroupBy === "state") newGroup = prevData[formData.state_id ?? ""] ?? [];
 
     const updatedIssue = {
       ...oldGroup[issueIndex],
       ...formData,
-      assignees: formData?.assignees_list ?? oldGroup[issueIndex]?.assignees,
-      labels: formData?.labels_list ?? oldGroup[issueIndex]?.labels,
     };
 
     if (selectedGroupBy !== Object.keys(formData)[0])
@@ -68,7 +65,7 @@ export const handleIssuesMutation: THandleIssuesMutation = (
         ),
       };
 
-    const groupThatIsUpdated = selectedGroupBy === "priority" ? formData.priority : formData.state;
+    const groupThatIsUpdated = selectedGroupBy === "priority" ? formData.priority : formData.state_id;
 
     return {
       ...prevData,
@@ -83,7 +80,7 @@ export const handleIssuesMutation: THandleIssuesMutation = (
 
 export const handleIssueQueryParamsByLayout = (
   layout: TIssueLayouts | undefined,
-  viewType: "my_issues" | "issues"
+  viewType: "my_issues" | "issues" | "profile_issues" | "archived_issues" | "draft_issues"
 ): TIssueParams[] | null => {
   const queryParams: TIssueParams[] = [];
 
@@ -108,8 +105,29 @@ export const handleIssueQueryParamsByLayout = (
     });
   }
 
-  // add start_target_date query param for the gantt_chart layout
-  if (layout === "gantt_chart") queryParams.push("start_target_date");
-
   return queryParams;
+};
+
+/**
+ *
+ * @description create a full issue payload with some default values. This function also parse the form field
+ * like assignees, labels, etc. and add them to the payload
+ * @param projectId project id to be added in the issue payload
+ * @param formData partial issue data from the form. This will override the default values
+ * @returns full issue payload with some default values
+ */
+export const createIssuePayload: (projectId: string, formData: Partial<TIssue>) => TIssue = (
+  projectId: string,
+  formData: Partial<TIssue>
+) => {
+  const payload: TIssue = {
+    id: uuidv4(),
+    project_id: projectId,
+    // tempId is used for optimistic updates. It is not a part of the API response.
+    tempId: uuidv4(),
+    // to be overridden by the form data
+    ...formData,
+  } as TIssue;
+
+  return payload;
 };

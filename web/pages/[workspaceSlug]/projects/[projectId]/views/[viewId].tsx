@@ -1,87 +1,36 @@
+import { ReactElement } from "react";
 import { useRouter } from "next/router";
-
 import useSWR from "swr";
-
-// services
-import { ProjectService } from "services/project";
-import { ViewService } from "services/view.service";
+// hooks
+import { useProjectView } from "hooks/store";
 // layouts
-import { ProjectAuthorizationWrapper } from "layouts/auth-layout-legacy";
+import { AppLayout } from "layouts/app-layout";
 // components
 import { ProjectViewLayoutRoot } from "components/issues";
-// ui
-import { CustomMenu } from "components/ui";
-import { BreadcrumbItem, Breadcrumbs } from "components/breadcrumbs";
-import { EmptyState } from "components/common";
-// icons
-import { StackedLayersIcon } from "components/icons";
-// images
-import emptyView from "public/empty-state/view.svg";
-// helpers
-import { truncateText } from "helpers/string.helper";
-// fetch-keys
-import { PROJECT_DETAILS, VIEWS_LIST, VIEW_DETAILS } from "constants/fetch-keys";
 import { ProjectViewIssuesHeader } from "components/headers";
+// ui
+import { EmptyState } from "components/common";
+// assets
+import emptyView from "public/empty-state/view.svg";
+// types
+import { NextPageWithLayout } from "lib/types";
 
-// services
-const projectService = new ProjectService();
-const viewService = new ViewService();
-
-const SingleView: React.FC = () => {
+const ProjectViewIssuesPage: NextPageWithLayout = () => {
+  // router
   const router = useRouter();
   const { workspaceSlug, projectId, viewId } = router.query;
+  // store hooks
+  const { fetchViewDetails } = useProjectView();
 
-  const { data: activeProject } = useSWR(
-    workspaceSlug && projectId ? PROJECT_DETAILS(projectId as string) : null,
-    workspaceSlug && projectId ? () => projectService.getProject(workspaceSlug as string, projectId as string) : null
-  );
-
-  const { data: views } = useSWR(
-    workspaceSlug && projectId ? VIEWS_LIST(projectId as string) : null,
-    workspaceSlug && projectId ? () => viewService.getViews(workspaceSlug as string, projectId as string) : null
-  );
-
-  const { data: viewDetails, error } = useSWR(
-    workspaceSlug && projectId && viewId ? VIEW_DETAILS(viewId as string) : null,
+  const { error } = useSWR(
+    workspaceSlug && projectId && viewId ? `VIEW_DETAILS_${viewId.toString()}` : null,
     workspaceSlug && projectId && viewId
-      ? () => viewService.getViewDetails(workspaceSlug as string, projectId as string, viewId as string)
+      ? () => fetchViewDetails(workspaceSlug.toString(), projectId.toString(), viewId.toString())
       : null
   );
 
   return (
-    <ProjectAuthorizationWrapper
-      breadcrumbs={
-        <Breadcrumbs>
-          <BreadcrumbItem
-            title={`${activeProject?.name ?? "Project"} Views`}
-            link={`/${workspaceSlug}/projects/${activeProject?.id}/cycles`}
-          />
-        </Breadcrumbs>
-      }
-      left={
-        <CustomMenu
-          label={
-            <>
-              <StackedLayersIcon height={12} width={12} />
-              {viewDetails?.name && truncateText(viewDetails.name, 40)}
-            </>
-          }
-          className="ml-1.5"
-          width="auto"
-        >
-          {views?.map((view) => (
-            <CustomMenu.MenuItem
-              key={view.id}
-              renderAs="a"
-              href={`/${workspaceSlug}/projects/${projectId}/views/${view.id}`}
-            >
-              {truncateText(view.name, 40)}
-            </CustomMenu.MenuItem>
-          ))}
-        </CustomMenu>
-      }
-      right={<ProjectViewIssuesHeader />}
-    >
+    <>
       {error ? (
         <EmptyState
           image={emptyView}
@@ -95,8 +44,16 @@ const SingleView: React.FC = () => {
       ) : (
         <ProjectViewLayoutRoot />
       )}
-    </ProjectAuthorizationWrapper>
+    </>
   );
 };
 
-export default SingleView;
+ProjectViewIssuesPage.getLayout = function getLayout(page: ReactElement) {
+  return (
+    <AppLayout header={<ProjectViewIssuesHeader />} withProjectWrapper>
+      {page}
+    </AppLayout>
+  );
+};
+
+export default ProjectViewIssuesPage;

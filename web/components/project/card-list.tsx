@@ -1,30 +1,34 @@
-import { FC } from "react";
 import { observer } from "mobx-react-lite";
-// lib
-import { useMobxStore } from "lib/mobx/store-provider";
+import { useTheme } from "next-themes";
+// hooks
+import { useApplication, useProject, useUser } from "hooks/store";
 // components
 import { ProjectCard } from "components/project";
-import { EmptyState } from "components/common";
 import { Loader } from "@plane/ui";
-// images
-import emptyProject from "public/empty-state/project.svg";
-// icons
-import { Plus } from "lucide-react";
+import { EmptyState, getEmptyStateImagePath } from "components/empty-state";
+// constants
+import { EUserWorkspaceRoles } from "constants/workspace";
 
-export interface IProjectCardList {
-  workspaceSlug: string;
-}
+export const ProjectCardList = observer(() => {
+  // theme
+  const { resolvedTheme } = useTheme();
+  // store hooks
+  const {
+    commandPalette: commandPaletteStore,
+    eventTracker: { setTrackElement },
+  } = useApplication();
+  const {
+    membership: { currentWorkspaceRole },
+    currentUser,
+  } = useUser();
+  const { workspaceProjectIds, searchedProjects, getProjectById } = useProject();
 
-export const ProjectCardList: FC<IProjectCardList> = observer((props) => {
-  const { workspaceSlug } = props;
-  // store
-  const { project: projectStore } = useMobxStore();
+  const isLightMode = resolvedTheme ? resolvedTheme === "light" : currentUser?.theme.theme === "light";
+  const emptyStateImage = getEmptyStateImagePath("onboarding", "projects", isLightMode);
 
-  const projects = workspaceSlug ? projectStore.projects[workspaceSlug.toString()] : null;
+  const isEditingAllowed = !!currentWorkspaceRole && currentWorkspaceRole >= EUserWorkspaceRoles.MEMBER;
 
-  console.log("projects", projects);
-
-  if (!projects) {
+  if (!workspaceProjectIds)
     return (
       <Loader className="grid grid-cols-3 gap-4">
         <Loader.Item height="100px" />
@@ -35,33 +39,43 @@ export const ProjectCardList: FC<IProjectCardList> = observer((props) => {
         <Loader.Item height="100px" />
       </Loader>
     );
-  }
 
   return (
     <>
-      {projects.length > 0 ? (
-        <div className="h-full p-8 overflow-y-auto">
-          <div className="grid grid-cols-1 gap-9 md:grid-cols-2 lg:grid-cols-3">
-            {projectStore.searchedProjects.map((project) => (
-              <ProjectCard key={project.id} project={project} />
-            ))}
-          </div>
+      {workspaceProjectIds.length > 0 ? (
+        <div className="h-full w-full overflow-y-auto p-8">
+          {searchedProjects.length == 0 ? (
+            <div className="mt-10 w-full text-center text-custom-text-400">No matching projects</div>
+          ) : (
+            <div className="grid grid-cols-1 gap-9 md:grid-cols-2 lg:grid-cols-3">
+              {searchedProjects.map((projectId) => {
+                const projectDetails = getProjectById(projectId);
+
+                if (!projectDetails) return;
+
+                return <ProjectCard key={projectDetails.id} project={projectDetails} />;
+              })}
+            </div>
+          )}
         </div>
       ) : (
         <EmptyState
-          image={emptyProject}
-          title="No projects yet"
-          description="Get started by creating your first project"
+          image={emptyStateImage}
+          title="Start a Project"
+          description="Think of each project as the parent for goal-oriented work. Projects are where Jobs, Cycles, and Modules live and, along with your colleagues, help you achieve that goal."
           primaryButton={{
-            icon: <Plus className="h-4 w-4" />,
-            text: "New Project",
+            text: "Start your first project",
             onClick: () => {
-              const e = new KeyboardEvent("keydown", {
-                key: "p",
-              });
-              document.dispatchEvent(e);
+              setTrackElement("PROJECTS_EMPTY_STATE");
+              commandPaletteStore.toggleCreateProjectModal(true);
             },
           }}
+          comicBox={{
+            title: "Everything starts with a project in Plane",
+            description: "A project could be a product’s roadmap, a marketing campaign, or launching a new car.",
+          }}
+          size="lg"
+          disabled={!isEditingAllowed}
         />
       )}
     </>

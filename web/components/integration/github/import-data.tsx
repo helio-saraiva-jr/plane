@@ -1,18 +1,16 @@
 import { FC } from "react";
-
-// react-hook-form
+import { observer } from "mobx-react-lite";
 import { Control, Controller, UseFormWatch } from "react-hook-form";
 // hooks
-import useProjects from "hooks/use-projects";
+import { useProject } from "hooks/store";
 // components
 import { SelectRepository, TFormValues, TIntegrationSteps } from "components/integration";
 // ui
-import { Button, ToggleSwitch } from "@plane/ui";
-import { CustomSearchSelect } from "components/ui";
+import { Button, CustomSearchSelect, ToggleSwitch } from "@plane/ui";
 // helpers
 import { truncateText } from "helpers/string.helper";
 // types
-import { IWorkspaceIntegration } from "types";
+import { IWorkspaceIntegration } from "@plane/types";
 
 type Props = {
   handleStepChange: (value: TIntegrationSteps) => void;
@@ -21,16 +19,20 @@ type Props = {
   watch: UseFormWatch<TFormValues>;
 };
 
-export const GithubImportData: FC<Props> = ({ handleStepChange, integration, control, watch }) => {
-  const { projects } = useProjects();
+export const GithubImportData: FC<Props> = observer((props) => {
+  const { handleStepChange, integration, control, watch } = props;
+  // store hooks
+  const { workspaceProjectIds, getProjectById } = useProject();
 
-  const options = projects
-    ? projects.map((project) => ({
-        value: project.id,
-        query: project.name,
-        content: <p>{truncateText(project.name, 25)}</p>,
-      }))
-    : undefined;
+  const options = workspaceProjectIds?.map((projectId) => {
+    const projectDetails = getProjectById(projectId);
+
+    return {
+      value: `${projectDetails?.id}`,
+      query: `${projectDetails?.name}`,
+      content: <p>{truncateText(projectDetails?.name ?? "", 25)}</p>,
+    };
+  });
 
   return (
     <div className="mt-6">
@@ -68,7 +70,7 @@ export const GithubImportData: FC<Props> = ({ handleStepChange, integration, con
             <p className="text-xs text-custom-text-200">Select the project to import the issues to.</p>
           </div>
           <div className="col-span-12 sm:col-span-4">
-            {projects && (
+            {workspaceProjectIds && (
               <Controller
                 control={control}
                 name="project"
@@ -76,11 +78,7 @@ export const GithubImportData: FC<Props> = ({ handleStepChange, integration, con
                   <CustomSearchSelect
                     value={value}
                     label={
-                      value ? (
-                        projects.find((p) => p.id === value)?.name
-                      ) : (
-                        <span className="text-custom-text-200">Select Project</span>
-                      )
+                      value ? getProjectById(value)?.name : <span className="text-custom-text-200">Select Project</span>
                     }
                     onChange={onChange}
                     options={options}
@@ -121,4 +119,4 @@ export const GithubImportData: FC<Props> = ({ handleStepChange, integration, con
       </div>
     </div>
   );
-};
+});

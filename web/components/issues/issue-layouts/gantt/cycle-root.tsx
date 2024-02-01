@@ -1,54 +1,48 @@
-import { useRouter } from "next/router";
 import { observer } from "mobx-react-lite";
+import { useRouter } from "next/router";
 // hooks
-import { useMobxStore } from "lib/mobx/store-provider";
-import useProjectDetails from "hooks/use-project-details";
+import { useCycle, useIssues } from "hooks/store";
 // components
-import { GanttChartRoot, renderIssueBlocksStructure } from "components/gantt-chart";
-import { IssueGanttBlock, IssueGanttSidebarBlock, IssuePeekOverview } from "components/issues";
-// types
-import { IIssueUnGroupedStructure } from "store/issue";
+import { BaseGanttRoot } from "./base-gantt-root";
+import { EIssuesStoreType } from "constants/issue";
+import { EIssueActions } from "../types";
+import { TIssue } from "@plane/types";
 
 export const CycleGanttLayout: React.FC = observer(() => {
+  // router
   const router = useRouter();
-  const { workspaceSlug, projectId } = router.query;
+  const { workspaceSlug, cycleId } = router.query;
+  // store hooks
+  const { issues, issuesFilter } = useIssues(EIssuesStoreType.CYCLE);
+  const { fetchCycleDetails } = useCycle();
 
-  const { projectDetails } = useProjectDetails();
+  const issueActions = {
+    [EIssueActions.UPDATE]: async (issue: TIssue) => {
+      if (!workspaceSlug || !cycleId) return;
 
-  const { cycleIssue: cycleIssueStore, issueFilter: issueFilterStore } = useMobxStore();
+      await issues.updateIssue(workspaceSlug.toString(), issue.project_id, issue.id, issue, cycleId.toString());
+      fetchCycleDetails(workspaceSlug.toString(), issue.project_id, cycleId.toString());
+    },
+    [EIssueActions.DELETE]: async (issue: TIssue) => {
+      if (!workspaceSlug || !cycleId) return;
 
-  const appliedDisplayFilters = issueFilterStore.userDisplayFilters;
+      await issues.removeIssue(workspaceSlug.toString(), issue.project_id, issue.id, cycleId.toString());
+      fetchCycleDetails(workspaceSlug.toString(), issue.project_id, cycleId.toString());
+    },
+    [EIssueActions.REMOVE]: async (issue: TIssue) => {
+      if (!workspaceSlug || !cycleId || !issue.id) return;
 
-  const issues = cycleIssueStore.getIssues;
-
-  const isAllowed = projectDetails?.member_role === 20 || projectDetails?.member_role === 15;
+      await issues.removeIssueFromCycle(workspaceSlug.toString(), issue.project_id, cycleId.toString(), issue.id);
+      fetchCycleDetails(workspaceSlug.toString(), issue.project_id, cycleId.toString());
+    },
+  };
 
   return (
-    <>
-      <IssuePeekOverview
-        projectId={projectId?.toString() ?? ""}
-        workspaceSlug={workspaceSlug?.toString() ?? ""}
-        readOnly={!isAllowed}
-      />
-      <div className="w-full h-full">
-        <GanttChartRoot
-          border={false}
-          title="Issues"
-          loaderTitle="Issues"
-          blocks={issues ? renderIssueBlocksStructure(issues as IIssueUnGroupedStructure) : null}
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          blockUpdateHandler={(block, payload) => {
-            // TODO: update mutation logic
-            // updateGanttIssue(block, payload, mutateGanttIssues, user, workspaceSlug?.toString())
-          }}
-          BlockRender={IssueGanttBlock}
-          SidebarBlockRender={IssueGanttSidebarBlock}
-          enableBlockLeftResize={isAllowed}
-          enableBlockRightResize={isAllowed}
-          enableBlockMove={isAllowed}
-          enableReorder={appliedDisplayFilters.order_by === "sort_order" && isAllowed}
-        />
-      </div>
-    </>
+    <BaseGanttRoot
+      issueActions={issueActions}
+      issueFiltersStore={issuesFilter}
+      issueStore={issues}
+      viewId={cycleId?.toString()}
+    />
   );
 });

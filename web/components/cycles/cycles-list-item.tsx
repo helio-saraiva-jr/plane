@@ -1,34 +1,26 @@
 import { FC, MouseEvent, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
 // hooks
+import { useApplication, useCycle, useUser } from "hooks/store";
 import useToast from "hooks/use-toast";
 // components
-import { CycleCreateEditModal } from "./cycle-create-edit-modal";
-import { CycleDeleteModal } from "./cycle-delete-modal";
+import { CycleCreateUpdateModal, CycleDeleteModal } from "components/cycles";
 // ui
-import { RadialProgressBar, Tooltip, LinearProgressIndicator } from "@plane/ui";
-import { CustomMenu } from "components/ui";
+import { CustomMenu, Tooltip, CircularProgressIndicator, CycleGroupIcon, AvatarGroup, Avatar } from "@plane/ui";
 // icons
-import { CalendarDaysIcon } from "@heroicons/react/20/solid";
-import {
-  TargetIcon,
-  ContrastIcon,
-  PersonRunningIcon,
-  ArrowRightIcon,
-  TriangleExclamationIcon,
-  AlarmClockIcon,
-} from "components/icons";
-// hooks
-import { useMobxStore } from "lib/mobx/store-provider";
-import { LinkIcon, PencilIcon, StarIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { Check, Info, LinkIcon, Pencil, Star, Trash2, User2 } from "lucide-react";
 // helpers
-import { getDateRangeStatus, renderShortDateWithYearFormat, findHowManyDaysLeft } from "helpers/date-time.helper";
+import { findHowManyDaysLeft, renderFormattedDate } from "helpers/date-time.helper";
 import { copyTextToClipboard } from "helpers/string.helper";
+// constants
+import { CYCLE_STATUS } from "constants/cycle";
+import { EUserWorkspaceRoles } from "constants/workspace";
 // types
-import { ICycle } from "types";
+import { TCycleGroups } from "@plane/types";
 
 type TCyclesListItem = {
-  cycle: ICycle;
+  cycleId: string;
   handleEditCycle?: () => void;
   handleDeleteCycle?: () => void;
   handleAddToFavorites?: () => void;
@@ -37,58 +29,30 @@ type TCyclesListItem = {
   projectId: string;
 };
 
-const stateGroups = [
-  {
-    key: "backlog_issues",
-    title: "Backlog",
-    color: "#dee2e6",
-  },
-  {
-    key: "unstarted_issues",
-    title: "Unstarted",
-    color: "#26b5ce",
-  },
-  {
-    key: "started_issues",
-    title: "Started",
-    color: "#f7ae59",
-  },
-  {
-    key: "cancelled_issues",
-    title: "Cancelled",
-    color: "#d687ff",
-  },
-  {
-    key: "completed_issues",
-    title: "Completed",
-    color: "#09a953",
-  },
-];
-
 export const CyclesListItem: FC<TCyclesListItem> = (props) => {
-  const { cycle, workspaceSlug, projectId } = props;
-
+  const { cycleId, workspaceSlug, projectId } = props;
+  // states
   const [updateModal, setUpdateModal] = useState(false);
-  const updateModalCallback = () => {};
-
   const [deleteModal, setDeleteModal] = useState(false);
-  const deleteModalCallback = () => {};
-
-  // store
-  const { cycle: cycleStore } = useMobxStore();
-
-  // toast
+  // router
+  const router = useRouter();
+  // store hooks
+  const {
+    eventTracker: { setTrackElement },
+  } = useApplication();
+  const {
+    membership: { currentProjectRole },
+  } = useUser();
+  const { getCycleById, addCycleToFavorites, removeCycleFromFavorites } = useCycle();
+  // toast alert
   const { setToastAlert } = useToast();
 
-  const cycleStatus = getDateRangeStatus(cycle.start_date, cycle.end_date);
-  const isCompleted = cycleStatus === "completed";
-  const endDate = new Date(cycle.end_date ?? "");
-  const startDate = new Date(cycle.start_date ?? "");
-
-  const handleCopyText = () => {
+  const handleCopyText = (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
     const originURL = typeof window !== "undefined" && window.location.origin ? window.location.origin : "";
 
-    copyTextToClipboard(`${originURL}/${workspaceSlug}/projects/${projectId}/cycles/${cycle.id}`).then(() => {
+    copyTextToClipboard(`${originURL}/${workspaceSlug}/projects/${projectId}/cycles/${cycleId}`).then(() => {
       setToastAlert({
         type: "success",
         title: "Link Copied!",
@@ -97,18 +61,11 @@ export const CyclesListItem: FC<TCyclesListItem> = (props) => {
     });
   };
 
-  const progressIndicatorData = stateGroups.map((group, index) => ({
-    id: index,
-    name: group.title,
-    value: cycle.total_issues > 0 ? ((cycle[group.key as keyof ICycle] as number) / cycle.total_issues) * 100 : 0,
-    color: group.color,
-  }));
-
   const handleAddToFavorites = (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     if (!workspaceSlug || !projectId) return;
 
-    cycleStore.addCycleToFavorites(workspaceSlug?.toString(), projectId.toString(), cycle.id).catch(() => {
+    addCycleToFavorites(workspaceSlug?.toString(), projectId.toString(), cycleId).catch(() => {
       setToastAlert({
         type: "error",
         title: "Error!",
@@ -121,7 +78,7 @@ export const CyclesListItem: FC<TCyclesListItem> = (props) => {
     e.preventDefault();
     if (!workspaceSlug || !projectId) return;
 
-    cycleStore.removeCycleFromFavorites(workspaceSlug?.toString(), projectId.toString(), cycle.id).catch(() => {
+    removeCycleFromFavorites(workspaceSlug?.toString(), projectId.toString(), cycleId).catch(() => {
       setToastAlert({
         type: "error",
         title: "Error!",
@@ -130,241 +87,188 @@ export const CyclesListItem: FC<TCyclesListItem> = (props) => {
     });
   };
 
+  const handleEditCycle = (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setUpdateModal(true);
+  };
+
+  const handleDeleteCycle = (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDeleteModal(true);
+    setTrackElement("CYCLE_PAGE_LIST_LAYOUT");
+  };
+
+  const openCycleOverview = (e: MouseEvent<HTMLButtonElement>) => {
+    const { query } = router;
+    e.preventDefault();
+    e.stopPropagation();
+
+    router.push({
+      pathname: router.pathname,
+      query: { ...query, peekCycle: cycleId },
+    });
+  };
+
+  const cycleDetails = getCycleById(cycleId);
+
+  if (!cycleDetails) return null;
+
+  // computed
+  // TODO: change this logic once backend fix the response
+  const cycleStatus = cycleDetails.status ? (cycleDetails.status.toLocaleLowerCase() as TCycleGroups) : "draft";
+  const isCompleted = cycleStatus === "completed";
+  const endDate = new Date(cycleDetails.end_date ?? "");
+  const startDate = new Date(cycleDetails.start_date ?? "");
+
+  const isEditingAllowed = !!currentProjectRole && currentProjectRole >= EUserWorkspaceRoles.MEMBER;
+
+  const cycleTotalIssues =
+    cycleDetails.backlog_issues +
+    cycleDetails.unstarted_issues +
+    cycleDetails.started_issues +
+    cycleDetails.completed_issues +
+    cycleDetails.cancelled_issues;
+
+  const renderDate = cycleDetails.start_date || cycleDetails.end_date;
+
+  // const areYearsEqual = startDate.getFullYear() === endDate.getFullYear();
+
+  const completionPercentage = (cycleDetails.completed_issues / cycleTotalIssues) * 100;
+
+  const progress = isNaN(completionPercentage) ? 0 : Math.floor(completionPercentage);
+
+  const currentCycle = CYCLE_STATUS.find((status) => status.value === cycleStatus);
+
+  const daysLeft = findHowManyDaysLeft(cycleDetails.end_date ?? new Date());
+
   return (
     <>
-      <div className="relative flex items-center gap-1 hover:bg-custom-background-80 transition-all rounded px-2 pl-3">
-        <div className="w-full text-xs py-3">
-          <Link href={`/${workspaceSlug}/projects/${projectId}/cycles/${cycle.id}`}>
-            <a className="w-full h-full relative overflow-hidden flex items-center gap-2">
-              {/* left content */}
-              <div className="relative flex items-center gap-2 overflow-hidden">
-                {/* cycle state */}
-                <div className="flex-shrink-0">
-                  <ContrastIcon
-                    className="h-5 w-5"
-                    color={`${
-                      cycleStatus === "current"
-                        ? "#09A953"
-                        : cycleStatus === "upcoming"
-                        ? "#F7AE59"
-                        : cycleStatus === "completed"
-                        ? "#3F76FF"
-                        : cycleStatus === "draft"
-                        ? "rgb(var(--color-text-200))"
-                        : ""
-                    }`}
-                  />
-                </div>
-
-                {/* cycle title and description */}
-                <div className="max-w-xl">
-                  <Tooltip tooltipContent={cycle.name} className="break-words" position="top-left">
-                    <div className="text-base font-semibold line-clamp-1 pr-5 overflow-hidden break-words">
-                      {cycle.name}
-                    </div>
-                  </Tooltip>
-                  {cycle.description && (
-                    <div className="mt-1 text-custom-text-200 break-words w-full line-clamp-2">{cycle.description}</div>
-                  )}
-                </div>
-              </div>
-
-              {/* right content */}
-              <div className="ml-auto flex-shrink-0 relative flex items-center gap-3 p-2">
-                {/* cycle status */}
-                <div
-                  className={`rounded-full px-2 py-1
-                    ${
-                      cycleStatus === "current"
-                        ? "bg-green-600/10 text-green-600"
-                        : cycleStatus === "upcoming"
-                        ? "bg-orange-300/10 text-orange-300"
-                        : cycleStatus === "completed"
-                        ? "bg-blue-500/10 text-blue-500"
-                        : cycleStatus === "draft"
-                        ? "bg-neutral-400/10 text-neutral-400"
-                        : ""
-                    }`}
-                >
-                  {cycleStatus === "current" ? (
-                    <span className="flex items-center gap-1 whitespace-nowrap">
-                      <PersonRunningIcon className="h-3.5 w-3.5" />
-                      {findHowManyDaysLeft(cycle.end_date ?? new Date())} days left
-                    </span>
-                  ) : cycleStatus === "upcoming" ? (
-                    <span className="flex items-center gap-1">
-                      <AlarmClockIcon className="h-3.5 w-3.5" />
-                      {findHowManyDaysLeft(cycle.start_date ?? new Date())} days left
-                    </span>
-                  ) : cycleStatus === "completed" ? (
-                    <span className="flex items-center gap-1">
-                      {cycle.total_issues - cycle.completed_issues > 0 && (
-                        <Tooltip
-                          tooltipContent={`${cycle.total_issues - cycle.completed_issues} more pending ${
-                            cycle.total_issues - cycle.completed_issues === 1 ? "issue" : "issues"
-                          }`}
-                        >
-                          <span>
-                            <TriangleExclamationIcon className="h-3.5 w-3.5 fill-current" />
-                          </span>
-                        </Tooltip>
-                      )}{" "}
-                      Completed
-                    </span>
-                  ) : (
-                    cycleStatus
-                  )}
-                </div>
-
-                {/* cycle start_date and target_date */}
-                {cycleStatus !== "draft" && (
-                  <div className="flex items-center justify-start gap-2 text-custom-text-200">
-                    <div className="flex items-start gap-1 whitespace-nowrap">
-                      <CalendarDaysIcon className="h-4 w-4" />
-                      <span>{renderShortDateWithYearFormat(startDate)}</span>
-                    </div>
-
-                    <ArrowRightIcon className="h-4 w-4" />
-
-                    <div className="flex items-start gap-1 whitespace-nowrap">
-                      <TargetIcon className="h-4 w-4" />
-                      <span>{renderShortDateWithYearFormat(endDate)}</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* cycle created by */}
-                <div className="flex items-center text-custom-text-200">
-                  {cycle.owned_by.avatar && cycle.owned_by.avatar !== "" ? (
-                    <img
-                      src={cycle.owned_by.avatar}
-                      height={16}
-                      width={16}
-                      className="rounded-full"
-                      alt={cycle.owned_by.display_name}
-                    />
-                  ) : (
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-300 capitalize text-white">
-                      {cycle.owned_by.display_name.charAt(0)}
-                    </span>
-                  )}
-                </div>
-
-                {/* cycle progress */}
-                <Tooltip
-                  position="top-right"
-                  tooltipContent={
-                    <div className="flex w-80 items-center gap-2 px-4 py-1">
-                      <span>Progress</span>
-                      <LinearProgressIndicator data={progressIndicatorData} />
-                    </div>
-                  }
-                >
-                  <span
-                    className={`rounded-md px-1.5 py-1
-                    ${
-                      cycleStatus === "current"
-                        ? "border border-green-600 bg-green-600/5 text-green-600"
-                        : cycleStatus === "upcoming"
-                        ? "border border-orange-300 bg-orange-300/5 text-orange-300"
-                        : cycleStatus === "completed"
-                        ? "border border-blue-500 bg-blue-500/5 text-blue-500"
-                        : cycleStatus === "draft"
-                        ? "border border-neutral-400 bg-neutral-400/5 text-neutral-400"
-                        : ""
-                    }`}
-                  >
-                    {cycleStatus === "current" ? (
-                      <span className="flex gap-1 whitespace-nowrap">
-                        {cycle.total_issues > 0 ? (
-                          <>
-                            <RadialProgressBar progress={(cycle.completed_issues / cycle.total_issues) * 100} />
-                            <span>{Math.floor((cycle.completed_issues / cycle.total_issues) * 100)} %</span>
-                          </>
-                        ) : (
-                          <span className="normal-case">No issues present</span>
-                        )}
-                      </span>
-                    ) : cycleStatus === "upcoming" ? (
-                      <span className="flex gap-1">
-                        <RadialProgressBar progress={100} /> Yet to start
-                      </span>
-                    ) : cycleStatus === "completed" ? (
-                      <span className="flex gap-1">
-                        <RadialProgressBar progress={100} />
-                        <span>{100} %</span>
-                      </span>
-                    ) : (
-                      <span className="flex gap-1">
-                        <RadialProgressBar progress={(cycle.total_issues / cycle.completed_issues) * 100} />
-                        {cycleStatus}
-                      </span>
-                    )}
-                  </span>
-                </Tooltip>
-
-                {/* cycle favorite */}
-                {cycle.is_favorite ? (
-                  <button type="button" onClick={handleRemoveFromFavorites}>
-                    <StarIcon className="h-4 w-4 text-orange-400" fill="#f6ad55" />
-                  </button>
-                ) : (
-                  <button type="button" onClick={handleAddToFavorites}>
-                    <StarIcon className="h-4 w-4 " color="rgb(var(--color-text-200))" />
-                  </button>
-                )}
-              </div>
-            </a>
-          </Link>
-        </div>
-
-        <div className="flex-shrink-0">
-          <CustomMenu width="auto" verticalEllipsis>
-            {!isCompleted && (
-              <CustomMenu.MenuItem onClick={() => setUpdateModal(true)}>
-                <span className="flex items-center justify-start gap-2">
-                  <PencilIcon className="h-4 w-4" />
-                  <span>Edit Cycle</span>
-                </span>
-              </CustomMenu.MenuItem>
-            )}
-
-            {!isCompleted && (
-              <CustomMenu.MenuItem onClick={() => setDeleteModal(true)}>
-                <span className="flex items-center justify-start gap-2">
-                  <TrashIcon className="h-4 w-4" />
-                  <span>Delete cycle</span>
-                </span>
-              </CustomMenu.MenuItem>
-            )}
-
-            <CustomMenu.MenuItem onClick={handleCopyText}>
-              <span className="flex items-center justify-start gap-2">
-                <LinkIcon className="h-4 w-4" />
-                <span>Copy cycle link</span>
-              </span>
-            </CustomMenu.MenuItem>
-          </CustomMenu>
-        </div>
-      </div>
-
-      <CycleCreateEditModal
-        cycle={cycle}
-        modal={updateModal}
-        modalClose={() => setUpdateModal(false)}
-        onSubmit={updateModalCallback}
+      <CycleCreateUpdateModal
+        data={cycleDetails}
+        isOpen={updateModal}
+        handleClose={() => setUpdateModal(false)}
         workspaceSlug={workspaceSlug}
         projectId={projectId}
       />
-
       <CycleDeleteModal
-        cycle={cycle}
-        modal={deleteModal}
-        modalClose={() => setDeleteModal(false)}
-        onSubmit={deleteModalCallback}
+        cycle={cycleDetails}
+        isOpen={deleteModal}
+        handleClose={() => setDeleteModal(false)}
         workspaceSlug={workspaceSlug}
         projectId={projectId}
       />
+      <Link href={`/${workspaceSlug}/projects/${projectId}/cycles/${cycleDetails.id}`}>
+        <div className="group flex h-16 w-full items-center justify-between gap-5 border-b border-custom-border-100 bg-custom-background-100 px-5 py-6 text-sm hover:bg-custom-background-90">
+          <div className="flex w-full items-center gap-3 truncate">
+            <div className="flex items-center gap-4 truncate">
+              <span className="flex-shrink-0">
+                <CircularProgressIndicator size={38} percentage={progress}>
+                  {isCompleted ? (
+                    progress === 100 ? (
+                      <Check className="h-3 w-3 stroke-[2] text-custom-primary-100" />
+                    ) : (
+                      <span className="text-sm text-custom-primary-100">{`!`}</span>
+                    )
+                  ) : progress === 100 ? (
+                    <Check className="h-3 w-3 stroke-[2] text-custom-primary-100" />
+                  ) : (
+                    <span className="text-xs text-custom-text-300">{`${progress}%`}</span>
+                  )}
+                </CircularProgressIndicator>
+              </span>
+
+              <div className="flex items-center gap-2.5">
+                <span className="flex-shrink-0">
+                  <CycleGroupIcon cycleGroup={cycleStatus} className="h-3.5 w-3.5" />
+                </span>
+                <Tooltip tooltipContent={cycleDetails.name} position="top">
+                  <span className="truncate text-base font-medium">{cycleDetails.name}</span>
+                </Tooltip>
+              </div>
+            </div>
+            <button onClick={openCycleOverview} className="z-10 hidden flex-shrink-0 group-hover:flex">
+              <Info className="h-4 w-4 text-custom-text-400" />
+            </button>
+          </div>
+
+          <div className="flex w-full items-center justify-end gap-2.5 md:w-auto md:flex-shrink-0 ">
+            <div className="flex items-center justify-center">
+              {currentCycle && (
+                <span
+                  className="flex h-6 w-20 items-center justify-center rounded-sm text-center text-xs"
+                  style={{
+                    color: currentCycle.color,
+                    backgroundColor: `${currentCycle.color}20`,
+                  }}
+                >
+                  {currentCycle.value === "current"
+                    ? `${daysLeft} ${daysLeft > 1 ? "days" : "day"} left`
+                    : `${currentCycle.label}`}
+                </span>
+              )}
+            </div>
+
+            {renderDate && (
+              <span className="flex w-40 items-center justify-center gap-2 text-xs text-custom-text-300">
+                {renderFormattedDate(startDate) ?? "_ _"} - {renderFormattedDate(endDate) ?? "_ _"}
+              </span>
+            )}
+
+            <Tooltip tooltipContent={`${cycleDetails.assignees.length} Members`}>
+              <div className="flex w-16 cursor-default items-center justify-center gap-1">
+                {cycleDetails.assignees.length > 0 ? (
+                  <AvatarGroup showTooltip={false}>
+                    {cycleDetails.assignees.map((assignee) => (
+                      <Avatar key={assignee.id} name={assignee.display_name} src={assignee.avatar} />
+                    ))}
+                  </AvatarGroup>
+                ) : (
+                  <span className="flex h-5 w-5 items-end justify-center rounded-full border border-dashed border-custom-text-400 bg-custom-background-80">
+                    <User2 className="h-4 w-4 text-custom-text-400" />
+                  </span>
+                )}
+              </div>
+            </Tooltip>
+            {isEditingAllowed &&
+              (cycleDetails.is_favorite ? (
+                <button type="button" onClick={handleRemoveFromFavorites}>
+                  <Star className="h-3.5 w-3.5 fill-current text-amber-500" />
+                </button>
+              ) : (
+                <button type="button" onClick={handleAddToFavorites}>
+                  <Star className="h-3.5 w-3.5 text-custom-text-200" />
+                </button>
+              ))}
+
+            <CustomMenu ellipsis>
+              {!isCompleted && isEditingAllowed && (
+                <>
+                  <CustomMenu.MenuItem onClick={handleEditCycle}>
+                    <span className="flex items-center justify-start gap-2">
+                      <Pencil className="h-3 w-3" />
+                      <span>Edit cycle</span>
+                    </span>
+                  </CustomMenu.MenuItem>
+                  <CustomMenu.MenuItem onClick={handleDeleteCycle}>
+                    <span className="flex items-center justify-start gap-2">
+                      <Trash2 className="h-3 w-3" />
+                      <span>Delete cycle</span>
+                    </span>
+                  </CustomMenu.MenuItem>
+                </>
+              )}
+              <CustomMenu.MenuItem onClick={handleCopyText}>
+                <span className="flex items-center justify-start gap-2">
+                  <LinkIcon className="h-3 w-3" />
+                  <span>Copy cycle link</span>
+                </span>
+              </CustomMenu.MenuItem>
+            </CustomMenu>
+          </div>
+        </div>
+      </Link>
     </>
   );
 };

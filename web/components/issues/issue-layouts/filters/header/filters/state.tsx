@@ -1,35 +1,35 @@
 import React, { useState } from "react";
-
+import { observer } from "mobx-react";
 // components
 import { FilterHeader, FilterOption } from "components/issues";
 // ui
-import { Loader } from "@plane/ui";
-// icons
-import { StateGroupIcon } from "components/icons";
-// helpers
-import { getStatesList } from "helpers/state.helper";
+import { Loader, StateGroupIcon } from "@plane/ui";
 // types
-import { IStateResponse } from "types";
+import { IState } from "@plane/types";
 
 type Props = {
   appliedFilters: string[] | null;
   handleUpdate: (val: string) => void;
-  itemsToRender: number;
   searchQuery: string;
-  states: IStateResponse | undefined;
-  viewButtons: React.ReactNode;
+  states: IState[] | undefined;
 };
 
-export const FilterState: React.FC<Props> = (props) => {
-  const { appliedFilters, handleUpdate, itemsToRender, searchQuery, states, viewButtons } = props;
+export const FilterState: React.FC<Props> = observer((props) => {
+  const { appliedFilters, handleUpdate, searchQuery, states } = props;
 
+  const [itemsToRender, setItemsToRender] = useState(5);
   const [previewEnabled, setPreviewEnabled] = useState(true);
-
-  const statesList = getStatesList(states);
 
   const appliedFiltersCount = appliedFilters?.length ?? 0;
 
-  const filteredOptions = statesList?.filter((s) => s.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredOptions = states?.filter((s) => s.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  const handleViewToggle = () => {
+    if (!filteredOptions) return;
+
+    if (itemsToRender === filteredOptions.length) setItemsToRender(5);
+    else setItemsToRender(filteredOptions.length);
+  };
 
   return (
     <>
@@ -52,10 +52,18 @@ export const FilterState: React.FC<Props> = (props) => {
                     title={state.name}
                   />
                 ))}
-                {viewButtons}
+                {filteredOptions.length > 5 && (
+                  <button
+                    type="button"
+                    className="ml-8 text-xs font-medium text-custom-primary-100"
+                    onClick={handleViewToggle}
+                  >
+                    {itemsToRender === filteredOptions.length ? "View less" : "View all"}
+                  </button>
+                )}
               </>
             ) : (
-              <p className="text-xs text-custom-text-400 italic">No matches found</p>
+              <p className="text-xs italic text-custom-text-400">No matches found</p>
             )
           ) : (
             <Loader className="space-y-2">
@@ -68,4 +76,4 @@ export const FilterState: React.FC<Props> = (props) => {
       )}
     </>
   );
-};
+});

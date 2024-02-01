@@ -4,7 +4,7 @@ import { observer } from "mobx-react-lite";
 // components
 import { FilterHeader } from "../helpers/filter-header";
 // types
-import { IIssueDisplayProperties } from "types";
+import { IIssueDisplayProperties } from "@plane/types";
 // constants
 import { ISSUE_DISPLAY_PROPERTIES } from "constants/issue";
 
@@ -26,14 +26,14 @@ export const FilterDisplayProperties: React.FC<Props> = observer((props) => {
         handleIsPreviewEnabled={() => setPreviewEnabled(!previewEnabled)}
       />
       {previewEnabled && (
-        <div className="flex items-center gap-2 flex-wrap mt-1">
+        <div className="mt-1 flex flex-wrap items-center gap-2">
           {ISSUE_DISPLAY_PROPERTIES.map((displayProperty) => (
             <button
               key={displayProperty.key}
               type="button"
-              className={`rounded transition-all text-xs border px-2 py-0.5 ${
+              className={`rounded border px-2 py-0.5 text-xs transition-all ${
                 displayProperties?.[displayProperty.key]
-                  ? "bg-custom-primary-100 border-custom-primary-100 text-white"
+                  ? "border-custom-primary-100 bg-custom-primary-100 text-white"
                   : "border-custom-border-200 hover:bg-custom-background-80"
               }`}
               onClick={() =>

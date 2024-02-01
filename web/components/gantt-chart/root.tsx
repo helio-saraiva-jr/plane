@@ -12,43 +12,50 @@ type GanttChartRootProps = {
   loaderTitle: string;
   blocks: IGanttBlock[] | null;
   blockUpdateHandler: (block: any, payload: IBlockUpdateData) => void;
-  SidebarBlockRender: FC<any>;
-  BlockRender: FC<any>;
+  blockToRender: (data: any) => React.ReactNode;
+  sidebarToRender: (props: any) => React.ReactNode;
   enableBlockLeftResize?: boolean;
   enableBlockRightResize?: boolean;
   enableBlockMove?: boolean;
   enableReorder?: boolean;
   bottomSpacing?: boolean;
+  showAllBlocks?: boolean;
 };
 
-export const GanttChartRoot: FC<GanttChartRootProps> = ({
-  border = true,
-  title,
-  blocks,
-  loaderTitle = "blocks",
-  blockUpdateHandler,
-  SidebarBlockRender,
-  BlockRender,
-  enableBlockLeftResize = true,
-  enableBlockRightResize = true,
-  enableBlockMove = true,
-  enableReorder = true,
-  bottomSpacing = false,
-}) => (
-  <ChartContextProvider>
-    <ChartViewRoot
-      border={border}
-      title={title}
-      blocks={blocks}
-      loaderTitle={loaderTitle}
-      blockUpdateHandler={blockUpdateHandler}
-      SidebarBlockRender={SidebarBlockRender}
-      BlockRender={BlockRender}
-      enableBlockLeftResize={enableBlockLeftResize}
-      enableBlockRightResize={enableBlockRightResize}
-      enableBlockMove={enableBlockMove}
-      enableReorder={enableReorder}
-      bottomSpacing={bottomSpacing}
-    />
-  </ChartContextProvider>
-);
+export const GanttChartRoot: FC<GanttChartRootProps> = (props) => {
+  const {
+    border = true,
+    title,
+    blocks,
+    loaderTitle = "blocks",
+    blockUpdateHandler,
+    sidebarToRender,
+    blockToRender,
+    enableBlockLeftResize = true,
+    enableBlockRightResize = true,
+    enableBlockMove = true,
+    enableReorder = true,
+    bottomSpacing = false,
+    showAllBlocks = false,
+  } = props;
+
+  return (
+    <ChartContextProvider>
+      <ChartViewRoot
+        border={border}
+        title={title}
+        blocks={blocks}
+        loaderTitle={loaderTitle}
+        blockUpdateHandler={blockUpdateHandler}
+        sidebarToRender={sidebarToRender}
+        blockToRender={blockToRender}
+        enableBlockLeftResize={enableBlockLeftResize}
+        enableBlockRightResize={enableBlockRightResize}
+        enableBlockMove={enableBlockMove}
+        enableReorder={enableReorder}
+        bottomSpacing={bottomSpacing}
+        showAllBlocks={showAllBlocks}
+      />
+    </ChartContextProvider>
+  );
+};

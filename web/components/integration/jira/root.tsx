@@ -1,28 +1,17 @@
 import React, { useState } from "react";
-
-// next
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/router";
-
-// swr
 import { mutate } from "swr";
-
-// react hook form
 import { FormProvider, useForm } from "react-hook-form";
-
 // icons
-import { ArrowLeftIcon, ListBulletIcon } from "@heroicons/react/24/outline";
-import { CogIcon, UsersIcon, CheckIcon } from "components/icons";
-
+import { ArrowLeft, Check, List, Settings } from "lucide-react";
 // services
 import { JiraImporterService } from "services/integrations";
-
 // fetch keys
 import { IMPORTER_SERVICES_LIST } from "constants/fetch-keys";
-
 // components
-import { Button } from "@plane/ui";
+import { Button, UserGroupIcon } from "@plane/ui";
 import {
   JiraGetImportDetail,
   JiraProjectDetail,
@@ -32,10 +21,10 @@ import {
   TJiraIntegrationSteps,
   IJiraIntegrationData,
 } from ".";
-
-import JiraLogo from "public/services/jira.png";
-
-import { IUser, IJiraImporterForm } from "types";
+// assets
+import JiraLogo from "public/services/jira.svg";
+// types
+import { IJiraImporterForm } from "@plane/types";
 
 const integrationWorkflowData: Array<{
   title: string;
@@ -45,33 +34,29 @@ const integrationWorkflowData: Array<{
   {
     title: "Configure",
     key: "import-configure",
-    icon: CogIcon,
+    icon: Settings,
   },
   {
     title: "Import Data",
     key: "display-import-data",
-    icon: ListBulletIcon,
+    icon: List,
   },
   {
     title: "Users",
     key: "import-users",
-    icon: UsersIcon,
+    icon: UserGroupIcon,
   },
   {
     title: "Confirm",
     key: "import-confirmation",
-    icon: CheckIcon,
+    icon: Check,
   },
 ];
-
-type Props = {
-  user: IUser | undefined;
-};
 
 // services
 const jiraImporterService = new JiraImporterService();
 
-export const JiraImporterRoot: React.FC<Props> = ({ user }) => {
+export const JiraImporterRoot: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<IJiraIntegrationData>({
     state: "import-configure",
   });
@@ -92,13 +77,13 @@ export const JiraImporterRoot: React.FC<Props> = ({ user }) => {
     if (!workspaceSlug) return;
 
     await jiraImporterService
-      .createJiraImporter(workspaceSlug.toString(), data, user)
+      .createJiraImporter(workspaceSlug.toString(), data)
       .then(() => {
         mutate(IMPORTER_SERVICES_LIST(workspaceSlug.toString()));
         router.push(`/${workspaceSlug}/settings/imports`);
       })
       .catch((err) => {
-        console.log(err);
+        console.error(err);
       });
   };
 
@@ -109,14 +94,14 @@ export const JiraImporterRoot: React.FC<Props> = ({ user }) => {
   };
 
   return (
-    <div className="flex h-full flex-col space-y-2">
+    <div className="mt-4 flex h-full flex-col space-y-2">
       <Link href={`/${workspaceSlug}/settings/imports`}>
-        <div className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-custom-text-200 hover:text-custom-text-100">
+        <span className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-custom-text-200 hover:text-custom-text-100">
           <div>
-            <ArrowLeftIcon className="h-3 w-3" />
+            <ArrowLeft className="h-3 w-3" />
           </div>
           <div>Cancel import & go back</div>
-        </div>
+        </span>
       </Link>
 
       <div className="flex h-full flex-col space-y-4 rounded-[10px] border border-custom-border-200 bg-custom-background-100 p-4">
@@ -147,9 +132,7 @@ export const JiraImporterRoot: React.FC<Props> = ({ user }) => {
                   }`}
                 >
                   <integration.icon
-                    width="18px"
-                    height="18px"
-                    color={index <= activeIntegrationState() ? "#ffffff" : "#d1d5db"}
+                    className={`h-5 w-5 ${index <= activeIntegrationState() ? "text-white" : "text-custom-text-400"}`}
                   />
                 </button>
                 {index < integrationWorkflowData.length - 1 && (

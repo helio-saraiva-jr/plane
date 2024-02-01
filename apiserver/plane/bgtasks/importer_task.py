@@ -2,8 +2,6 @@
 import json
 import requests
 import uuid
-import jwt
-from datetime import datetime
 
 # Django imports
 from django.conf import settings
@@ -15,7 +13,7 @@ from celery import shared_task
 from sentry_sdk import capture_exception
 
 # Module imports
-from plane.api.serializers import ImporterSerializer
+from plane.app.serializers import ImporterSerializer
 from plane.db.models import (
     Importer,
     WorkspaceMember,
@@ -25,9 +23,9 @@ from plane.db.models import (
     WorkspaceIntegration,
     Label,
     User,
+    IssueProperty,
+    UserNotificationPreference,
 )
-from .workspace_invitation_task import workspace_invitation
-from plane.bgtasks.user_welcome_task import send_welcome_slack
 
 
 @shared_task
@@ -53,11 +51,16 @@ def service_importer(service, importer_id):
                     for user in users
                     if user.get("import", False) == "invite"
                 ],
-                batch_size=10,
+                batch_size=100,
                 ignore_conflicts=True,
             )
 
-            [
+            _ = UserNotificationPreference.objects.bulk_create(
+                [UserNotificationPreference(user=user) for user in new_users],
+                batch_size=100,
+            )
+
+            _ = [
                 send_welcome_slack.delay(
                     str(user.id),
                     True,
@@ -74,6 +77,12 @@ def service_importer(service, importer_id):
                     or user.get("import", False) == "map"
                 ]
             )
+
+            # Check if any of the users are already member of workspace
+            _ = WorkspaceMember.objects.filter(
+                member__in=[user for user in workspace_users],
+                workspace_id=importer.workspace_id,
+            ).update(is_active=True)
 
             # Add new users to Workspace and project automatically
             WorkspaceMember.objects.bulk_create(
@@ -103,6 +112,20 @@ def service_importer(service, importer_id):
                 ignore_conflicts=True,
             )
 
+            IssueProperty.objects.bulk_create(
+                [
+                    IssueProperty(
+                        project_id=importer.project_id,
+                        workspace_id=importer.workspace_id,
+                        user=user,
+                        created_by=importer.created_by,
+                    )
+                    for user in workspace_users
+                ],
+                batch_size=100,
+                ignore_conflicts=True,
+            )
+
         # Check if sync config is on for github importers
         if service == "github" and importer.config.get("sync", False):
             name = importer.metadata.get("name", False)
@@ -112,12 +135,17 @@ def service_importer(service, importer_id):
             repository_id = importer.metadata.get("repository_id", False)
 
             workspace_integration = WorkspaceIntegration.objects.get(
-                workspace_id=importer.workspace_id, integration__provider="github"
+                workspace_id=importer.workspace_id,
+                integration__provider="github",
             )
 
             # Delete the old repository object
-            GithubRepositorySync.objects.filter(project_id=importer.project_id).delete()
-            GithubRepository.objects.filter(project_id=importer.project_id).delete()
+            GithubRepositorySync.objects.filter(
+                project_id=importer.project_id
+            ).delete()
+            GithubRepository.objects.filter(
+                project_id=importer.project_id
+            ).delete()
 
             # Create a Label for github
             label = Label.objects.filter(
@@ -142,7 +170,7 @@ def service_importer(service, importer_id):
             )
 
             # Create repo sync
-            repo_sync = GithubRepositorySync.objects.create(
+            _ = GithubRepositorySync.objects.create(
                 repository=repo,
                 workspace_integration=workspace_integration,
                 actor=workspace_integration.actor,
@@ -164,7 +192,7 @@ def service_importer(service, importer_id):
                 ImporterSerializer(importer).data,
                 cls=DjangoJSONEncoder,
             )
-            res = requests.post(
+            _ = requests.post(
                 f"{settings.PROXY_BASE_URL}/hooks/workspaces/{str(importer.workspace_id)}/projects/{str(importer.project_id)}/importers/{str(service)}/",
                 json=import_data_json,
                 headers=headers,

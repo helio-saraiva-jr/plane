@@ -1,94 +1,142 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/router";
 import { observer } from "mobx-react-lite";
-
-// mobx store
-import { useMobxStore } from "lib/mobx/store-provider";
+import Link from "next/link";
+// hooks
+import {
+  useApplication,
+  useCycle,
+  useLabel,
+  useMember,
+  useProject,
+  useProjectState,
+  useUser,
+  useIssues,
+} from "hooks/store";
+import useLocalStorage from "hooks/use-local-storage";
 // components
 import { DisplayFiltersSelection, FiltersDropdown, FilterSelection, LayoutSelection } from "components/issues";
 import { ProjectAnalyticsModal } from "components/analytics";
+import { SidebarHamburgerToggle } from "components/core/sidebar/sidebar-menu-hamburger-toggle";
 // ui
-import { Button } from "@plane/ui";
+import { Breadcrumbs, Button, ContrastIcon, CustomMenu } from "@plane/ui";
 // icons
-import { Plus } from "lucide-react";
+import { ArrowRight, Plus } from "lucide-react";
+// helpers
+import { truncateText } from "helpers/string.helper";
+import { renderEmoji } from "helpers/emoji.helper";
 // types
-import { IIssueDisplayFilterOptions, IIssueDisplayProperties, IIssueFilterOptions, TIssueLayouts } from "types";
+import { IIssueDisplayFilterOptions, IIssueDisplayProperties, IIssueFilterOptions, TIssueLayouts } from "@plane/types";
 // constants
-import { ISSUE_DISPLAY_FILTERS_BY_LAYOUT } from "constants/issue";
+import { EIssueFilterType, EIssuesStoreType, ISSUE_DISPLAY_FILTERS_BY_LAYOUT } from "constants/issue";
+import { EUserProjectRoles } from "constants/project";
+
+const CycleDropdownOption: React.FC<{ cycleId: string }> = ({ cycleId }) => {
+  // router
+  const router = useRouter();
+  const { workspaceSlug, projectId } = router.query;
+  // store hooks
+  const { getCycleById } = useCycle();
+  // derived values
+  const cycle = getCycleById(cycleId);
+
+  if (!cycle) return null;
+
+  return (
+    <CustomMenu.MenuItem key={cycle.id}>
+      <Link href={`/${workspaceSlug}/projects/${projectId}/cycles/${cycle.id}`} className="flex items-center gap-1.5">
+        <ContrastIcon className="h-3 w-3" />
+        {truncateText(cycle.name, 40)}
+      </Link>
+    </CustomMenu.MenuItem>
+  );
+};
 
 export const CycleIssuesHeader: React.FC = observer(() => {
+  // states
   const [analyticsModal, setAnalyticsModal] = useState(false);
-
+  // router
   const router = useRouter();
-  const { workspaceSlug, projectId, cycleId } = router.query;
-
+  const { workspaceSlug, projectId, cycleId } = router.query as {
+    workspaceSlug: string;
+    projectId: string;
+    cycleId: string;
+  };
+  // store hooks
   const {
-    issueFilter: issueFilterStore,
-    cycle: cycleStore,
-    cycleIssueFilter: cycleIssueFilterStore,
-    project: projectStore,
-  } = useMobxStore();
+    issuesFilter: { issueFilters, updateFilters },
+  } = useIssues(EIssuesStoreType.CYCLE);
+  const { currentProjectCycleIds, getCycleById } = useCycle();
+  const {
+    commandPalette: { toggleCreateIssueModal },
+    eventTracker: { setTrackElement },
+  } = useApplication();
+  const {
+    membership: { currentProjectRole },
+  } = useUser();
+  const { currentProjectDetails } = useProject();
+  const { projectStates } = useProjectState();
+  const { projectLabels } = useLabel();
+  const {
+    project: { projectMemberIds },
+  } = useMember();
 
-  const activeLayout = issueFilterStore.userDisplayFilters.layout;
+  const activeLayout = issueFilters?.displayFilters?.layout;
+
+  const { setValue, storedValue } = useLocalStorage("cycle_sidebar_collapsed", "false");
+
+  const isSidebarCollapsed = storedValue ? (storedValue === "true" ? true : false) : false;
+  const toggleSidebar = () => {
+    setValue(`${!isSidebarCollapsed}`);
+  };
 
   const handleLayoutChange = useCallback(
     (layout: TIssueLayouts) => {
       if (!workspaceSlug || !projectId) return;
-
-      issueFilterStore.updateUserFilters(workspaceSlug.toString(), projectId.toString(), {
-        display_filters: {
-          layout,
-        },
-      });
+      updateFilters(workspaceSlug, projectId, EIssueFilterType.DISPLAY_FILTERS, { layout: layout }, cycleId);
     },
-    [issueFilterStore, projectId, workspaceSlug]
+    [workspaceSlug, projectId, cycleId, updateFilters]
   );
 
   const handleFiltersUpdate = useCallback(
     (key: keyof IIssueFilterOptions, value: string | string[]) => {
-      if (!workspaceSlug || !projectId || !cycleId) return;
-
-      const newValues = cycleIssueFilterStore.cycleFilters?.[key] ?? [];
+      if (!workspaceSlug || !projectId) return;
+      const newValues = issueFilters?.filters?.[key] ?? [];
 
       if (Array.isArray(value)) {
         value.forEach((val) => {
           if (!newValues.includes(val)) newValues.push(val);
         });
       } else {
-        if (cycleIssueFilterStore.cycleFilters?.[key]?.includes(value)) newValues.splice(newValues.indexOf(value), 1);
+        if (issueFilters?.filters?.[key]?.includes(value)) newValues.splice(newValues.indexOf(value), 1);
         else newValues.push(value);
       }
 
-      cycleIssueFilterStore.updateCycleFilters(workspaceSlug.toString(), projectId.toString(), cycleId.toString(), {
-        [key]: newValues,
-      });
+      updateFilters(workspaceSlug, projectId, EIssueFilterType.FILTERS, { [key]: newValues }, cycleId);
     },
-    [cycleId, cycleIssueFilterStore, projectId, workspaceSlug]
+    [workspaceSlug, projectId, cycleId, issueFilters, updateFilters]
   );
 
-  const handleDisplayFiltersUpdate = useCallback(
+  const handleDisplayFilters = useCallback(
     (updatedDisplayFilter: Partial<IIssueDisplayFilterOptions>) => {
       if (!workspaceSlug || !projectId) return;
-
-      issueFilterStore.updateUserFilters(workspaceSlug.toString(), projectId.toString(), {
-        display_filters: {
-          ...updatedDisplayFilter,
-        },
-      });
+      updateFilters(workspaceSlug, projectId, EIssueFilterType.DISPLAY_FILTERS, updatedDisplayFilter, cycleId);
     },
-    [issueFilterStore, projectId, workspaceSlug]
+    [workspaceSlug, projectId, cycleId, updateFilters]
   );
 
-  const handleDisplayPropertiesUpdate = useCallback(
+  const handleDisplayProperties = useCallback(
     (property: Partial<IIssueDisplayProperties>) => {
       if (!workspaceSlug || !projectId) return;
-
-      issueFilterStore.updateDisplayProperties(workspaceSlug.toString(), projectId.toString(), property);
+      updateFilters(workspaceSlug, projectId, EIssueFilterType.DISPLAY_PROPERTIES, property, cycleId);
     },
-    [issueFilterStore, projectId, workspaceSlug]
+    [workspaceSlug, projectId, cycleId, updateFilters]
   );
 
-  const cycleDetails = cycleId ? cycleStore.getCycleById(cycleId.toString()) : undefined;
+  // derived values
+  const cycleDetails = cycleId ? getCycleById(cycleId.toString()) : undefined;
+  const canUserCreateIssue =
+    currentProjectRole && [EUserProjectRoles.ADMIN, EUserProjectRoles.MEMBER].includes(currentProjectRole);
 
   return (
     <>
@@ -97,50 +145,108 @@ export const CycleIssuesHeader: React.FC = observer(() => {
         onClose={() => setAnalyticsModal(false)}
         cycleDetails={cycleDetails ?? undefined}
       />
-      <div className="flex items-center gap-2">
-        <LayoutSelection
-          layouts={["list", "kanban", "calendar", "spreadsheet", "gantt_chart"]}
-          onChange={(layout) => handleLayoutChange(layout)}
-          selectedLayout={activeLayout}
-        />
-        <FiltersDropdown title="Filters">
-          <FilterSelection
-            filters={cycleIssueFilterStore.cycleFilters}
-            handleFiltersUpdate={handleFiltersUpdate}
-            layoutDisplayFiltersOptions={
-              activeLayout ? ISSUE_DISPLAY_FILTERS_BY_LAYOUT.issues[activeLayout] : undefined
-            }
-            labels={projectStore.labels?.[projectId?.toString() ?? ""] ?? undefined}
-            members={projectStore.members?.[projectId?.toString() ?? ""]?.map((m) => m.member)}
-            states={projectStore.states?.[projectId?.toString() ?? ""] ?? undefined}
+      <div className="relative z-10 flex h-[3.75rem] w-full items-center justify-between gap-x-2 gap-y-4 border-b border-custom-border-200 bg-custom-sidebar-background-100 p-4">
+        <div className="flex items-center gap-2">
+          <SidebarHamburgerToggle />
+          <Breadcrumbs>
+            <Breadcrumbs.BreadcrumbItem
+              type="text"
+              icon={
+                currentProjectDetails?.emoji ? (
+                  renderEmoji(currentProjectDetails.emoji)
+                ) : currentProjectDetails?.icon_prop ? (
+                  renderEmoji(currentProjectDetails.icon_prop)
+                ) : (
+                  <span className="flex h-4 w-4 items-center justify-center rounded bg-gray-700 uppercase text-white">
+                    {currentProjectDetails?.name.charAt(0)}
+                  </span>
+                )
+              }
+              label={currentProjectDetails?.name ?? "Project"}
+              link={`/${workspaceSlug}/projects/${currentProjectDetails?.id}/issues`}
+            />
+            <Breadcrumbs.BreadcrumbItem
+              type="text"
+              icon={<ContrastIcon className="h-4 w-4 text-custom-text-300" />}
+              label="Cycles"
+              link={`/${workspaceSlug}/projects/${projectId}/cycles`}
+            />
+            <Breadcrumbs.BreadcrumbItem
+              type="component"
+              component={
+                <CustomMenu
+                  label={
+                    <>
+                      <ContrastIcon className="h-3 w-3" />
+                      {cycleDetails?.name && truncateText(cycleDetails.name, 40)}
+                    </>
+                  }
+                  className="ml-1.5 flex-shrink-0"
+                  placement="bottom-start"
+                >
+                  {currentProjectCycleIds?.map((cycleId) => (
+                    <CycleDropdownOption key={cycleId} cycleId={cycleId} />
+                  ))}
+                </CustomMenu>
+              }
+            />
+          </Breadcrumbs>
+        </div>
+        <div className="flex items-center gap-2">
+          <LayoutSelection
+            layouts={["list", "kanban", "calendar", "spreadsheet", "gantt_chart"]}
+            onChange={(layout) => handleLayoutChange(layout)}
+            selectedLayout={activeLayout}
           />
-        </FiltersDropdown>
-        <FiltersDropdown title="View">
-          <DisplayFiltersSelection
-            displayFilters={issueFilterStore.userDisplayFilters}
-            displayProperties={issueFilterStore.userDisplayProperties}
-            handleDisplayFiltersUpdate={handleDisplayFiltersUpdate}
-            handleDisplayPropertiesUpdate={handleDisplayPropertiesUpdate}
-            layoutDisplayFiltersOptions={
-              activeLayout ? ISSUE_DISPLAY_FILTERS_BY_LAYOUT.issues[activeLayout] : undefined
-            }
-          />
-        </FiltersDropdown>
-        <Button onClick={() => setAnalyticsModal(true)} variant="neutral-primary" size="sm">
-          Analytics
-        </Button>
-        <Button
-          onClick={() => {
-            const e = new KeyboardEvent("keydown", {
-              key: "c",
-            });
-            document.dispatchEvent(e);
-          }}
-          size="sm"
-          prependIcon={<Plus />}
-        >
-          Add Issue
-        </Button>
+          <FiltersDropdown title="Filters" placement="bottom-end">
+            <FilterSelection
+              filters={issueFilters?.filters ?? {}}
+              handleFiltersUpdate={handleFiltersUpdate}
+              layoutDisplayFiltersOptions={
+                activeLayout ? ISSUE_DISPLAY_FILTERS_BY_LAYOUT.issues[activeLayout] : undefined
+              }
+              labels={projectLabels}
+              memberIds={projectMemberIds ?? undefined}
+              states={projectStates}
+            />
+          </FiltersDropdown>
+          <FiltersDropdown title="Display" placement="bottom-end">
+            <DisplayFiltersSelection
+              layoutDisplayFiltersOptions={
+                activeLayout ? ISSUE_DISPLAY_FILTERS_BY_LAYOUT.issues[activeLayout] : undefined
+              }
+              displayFilters={issueFilters?.displayFilters ?? {}}
+              handleDisplayFiltersUpdate={handleDisplayFilters}
+              displayProperties={issueFilters?.displayProperties ?? {}}
+              handleDisplayPropertiesUpdate={handleDisplayProperties}
+            />
+          </FiltersDropdown>
+
+          {canUserCreateIssue && (
+            <>
+              <Button onClick={() => setAnalyticsModal(true)} variant="neutral-primary" size="sm">
+                Analytics
+              </Button>
+              <Button
+                onClick={() => {
+                  setTrackElement("CYCLE_PAGE_HEADER");
+                  toggleCreateIssueModal(true, EIssuesStoreType.CYCLE);
+                }}
+                size="sm"
+                prependIcon={<Plus />}
+              >
+                Add Issue
+              </Button>
+            </>
+          )}
+          <button
+            type="button"
+            className="grid h-7 w-7 place-items-center rounded p-1 outline-none hover:bg-custom-sidebar-background-80"
+            onClick={toggleSidebar}
+          >
+            <ArrowRight className={`h-4 w-4 duration-300 ${isSidebarCollapsed ? "-rotate-180" : ""}`} />
+          </button>
+        </div>
       </div>
     </>
   );

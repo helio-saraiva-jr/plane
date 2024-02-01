@@ -1,19 +1,18 @@
 import { Dispatch, SetStateAction, useEffect, useState, FC } from "react";
-import { mutate } from "swr";
+import { useRouter } from "next/router";
+import { observer } from "mobx-react-lite";
 import { Controller, useForm } from "react-hook-form";
 // services
 import { WorkspaceService } from "services/workspace.service";
 // hooks
+import { useApplication, useWorkspace } from "hooks/store";
 import useToast from "hooks/use-toast";
 // ui
-import { CustomSelect } from "components/ui";
-import { Button, Input } from "@plane/ui";
+import { Button, CustomSelect, Input } from "@plane/ui";
 // types
-import { IUser, IWorkspace } from "types";
-// fetch-keys
-import { USER_WORKSPACES } from "constants/fetch-keys";
+import { IWorkspace } from "@plane/types";
 // constants
-import { ORGANIZATION_SIZE } from "constants/workspace";
+import { ORGANIZATION_SIZE, RESTRICTED_URLS } from "constants/workspace";
 
 type Props = {
   onSubmit?: (res: IWorkspace) => Promise<void>;
@@ -23,7 +22,6 @@ type Props = {
     organization_size: string;
   };
   setDefaultValues: Dispatch<SetStateAction<any>>;
-  user: IUser | undefined;
   secondaryButton?: React.ReactNode;
   primaryButtonText?: {
     loading: string;
@@ -31,40 +29,32 @@ type Props = {
   };
 };
 
-const restrictedUrls = [
-  "api",
-  "installations",
-  "404",
-  "create-workspace",
-  "error",
-  "invitations",
-  "magic-sign-in",
-  "onboarding",
-  "profile",
-  "reset-password",
-  "sign-up",
-  "spaces",
-  "workspace-member-invitation",
-];
-
 const workspaceService = new WorkspaceService();
 
-export const CreateWorkspaceForm: FC<Props> = ({
-  onSubmit,
-  defaultValues,
-  setDefaultValues,
-  user,
-  secondaryButton,
-  primaryButtonText = {
-    loading: "Creating...",
-    default: "Create Workspace",
-  },
-}) => {
+export const CreateWorkspaceForm: FC<Props> = observer((props) => {
+  const {
+    onSubmit,
+    defaultValues,
+    setDefaultValues,
+    secondaryButton,
+    primaryButtonText = {
+      loading: "Creating...",
+      default: "Create Workspace",
+    },
+  } = props;
+  // states
   const [slugError, setSlugError] = useState(false);
   const [invalidSlug, setInvalidSlug] = useState(false);
-
+  // router
+  const router = useRouter();
+  // store hooks
+  const {
+    eventTracker: { postHogEventTracker },
+  } = useApplication();
+  const { createWorkspace } = useWorkspace();
+  // toast alert
   const { setToastAlert } = useToast();
-
+  // form info
   const {
     handleSubmit,
     control,
@@ -77,28 +67,33 @@ export const CreateWorkspaceForm: FC<Props> = ({
     await workspaceService
       .workspaceSlugCheck(formData.slug)
       .then(async (res) => {
-        if (res.status === true && !restrictedUrls.includes(formData.slug)) {
+        if (res.status === true && !RESTRICTED_URLS.includes(formData.slug)) {
           setSlugError(false);
 
-          await workspaceService
-            .createWorkspace(formData, user)
+          await createWorkspace(formData)
             .then(async (res) => {
+              postHogEventTracker("WORKSPACE_CREATED", {
+                ...res,
+                state: "SUCCESS",
+              });
               setToastAlert({
                 type: "success",
                 title: "Success!",
                 message: "Workspace created successfully.",
               });
 
-              mutate<IWorkspace[]>(USER_WORKSPACES, (prevData) => [res, ...(prevData ?? [])], false);
               if (onSubmit) await onSubmit(res);
             })
-            .catch(() =>
+            .catch(() => {
               setToastAlert({
                 type: "error",
                 title: "Error!",
                 message: "Workspace could not be created. Please try again.",
-              })
-            );
+              });
+              postHogEventTracker("WORKSPACE_CREATED", {
+                state: "FAILED",
+              });
+            });
         } else setSlugError(true);
       })
       .catch(() => {
@@ -106,6 +101,9 @@ export const CreateWorkspaceForm: FC<Props> = ({
           type: "error",
           title: "Error!",
           message: "Some error occurred while creating workspace. Please try again.",
+        });
+        postHogEventTracker("WORKSPACE_CREATED", {
+          state: "FAILED",
         });
       });
   };
@@ -135,13 +133,16 @@ export const CreateWorkspaceForm: FC<Props> = ({
                 message: "Workspace name should not exceed 80 characters",
               },
             }}
-            render={({ field: { value, ref } }) => (
+            render={({ field: { value, ref, onChange } }) => (
               <Input
                 id="workspaceName"
-                name="name"
                 type="text"
                 value={value}
-                onChange={(e) => setValue("slug", e.target.value.toLocaleLowerCase().trim().replace(/ /g, "-"))}
+                onChange={(e) => {
+                  onChange(e.target.value);
+                  setValue("name", e.target.value);
+                  setValue("slug", e.target.value.toLocaleLowerCase().trim().replace(/ /g, "-"));
+                }}
                 ref={ref}
                 hasError={Boolean(errors.name)}
                 placeholder="Enter workspace name..."
@@ -152,7 +153,7 @@ export const CreateWorkspaceForm: FC<Props> = ({
         </div>
         <div className="space-y-1 text-sm">
           <label htmlFor="workspaceUrl">Workspace URL</label>
-          <div className="flex w-full items-center rounded-md border border-custom-border-200 px-3">
+          <div className="flex w-full items-center rounded-md border-[0.5px] border-custom-border-200 px-3">
             <span className="whitespace-nowrap text-sm text-custom-text-200">{window && window.location.host}/</span>
             <Controller
               control={control}
@@ -160,19 +161,19 @@ export const CreateWorkspaceForm: FC<Props> = ({
               rules={{
                 required: "Workspace URL is required",
               }}
-              render={({ field: { value, ref } }) => (
+              render={({ field: { onChange, value, ref } }) => (
                 <Input
                   id="workspaceUrl"
-                  name="slug"
                   type="text"
-                  value={value}
-                  onChange={(e) =>
-                    /^[a-zA-Z0-9_-]+$/.test(e.target.value) ? setInvalidSlug(false) : setInvalidSlug(true)
-                  }
+                  value={value.toLocaleLowerCase().trim().replace(/ /g, "-")}
+                  onChange={(e) => {
+                    /^[a-zA-Z0-9_-]+$/.test(e.target.value) ? setInvalidSlug(false) : setInvalidSlug(true);
+                    onChange(e.target.value.toLowerCase());
+                  }}
                   ref={ref}
                   hasError={Boolean(errors.slug)}
-                  placeholder="Enter workspace name..."
-                  className="block rounded-md bg-transparent py-2 !px-0 text-sm w-full"
+                  placeholder="Enter workspace url..."
+                  className="block w-full rounded-md border-none bg-transparent !px-0 py-2 text-sm"
                 />
               )}
             />
@@ -195,11 +196,12 @@ export const CreateWorkspaceForm: FC<Props> = ({
                   onChange={onChange}
                   label={
                     ORGANIZATION_SIZE.find((c) => c === value) ?? (
-                      <span className="text-custom-text-200">Select organization size</span>
+                      <span className="text-custom-text-400">Select organization size</span>
                     )
                   }
+                  buttonClassName="!border-[0.5px] !border-custom-border-200 !shadow-none"
                   input
-                  width="w-full"
+                  optionsClassName="w-full"
                 >
                   {ORGANIZATION_SIZE.map((item) => (
                     <CustomSelect.Option key={item} value={item}>
@@ -221,7 +223,12 @@ export const CreateWorkspaceForm: FC<Props> = ({
         <Button variant="primary" type="submit" size="md" disabled={!isValid} loading={isSubmitting}>
           {isSubmitting ? primaryButtonText.loading : primaryButtonText.default}
         </Button>
+        {!secondaryButton && (
+          <Button variant="neutral-primary" type="button" size="md" onClick={() => router.back()}>
+            Go back
+          </Button>
+        )}
       </div>
     </form>
   );
-};
+});

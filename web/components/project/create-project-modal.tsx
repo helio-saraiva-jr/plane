@@ -1,78 +1,80 @@
-import { useState, useEffect, Fragment } from "react";
-import { useRouter } from "next/router";
+import { useState, useEffect, Fragment, FC, ChangeEvent } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { Dialog, Transition } from "@headlessui/react";
-// icons
-import { XMarkIcon } from "@heroicons/react/24/outline";
+import { observer } from "mobx-react-lite";
+import { X } from "lucide-react";
 // hooks
+import { useApplication, useProject, useUser, useWorkspace } from "hooks/store";
 import useToast from "hooks/use-toast";
-import { useWorkspaceMyMembership } from "contexts/workspace-member.context";
-import useWorkspaceMembers from "hooks/use-workspace-members";
 // ui
-import { CustomSelect, Icon, Avatar, CustomSearchSelect } from "components/ui";
-import { Button, Input, TextArea } from "@plane/ui";
+import { Button, CustomSelect, Input, TextArea } from "@plane/ui";
 // components
 import { ImagePickerPopover } from "components/core";
 import EmojiIconPicker from "components/emoji-icon-picker";
+import { WorkspaceMemberDropdown } from "components/dropdowns";
 // helpers
 import { getRandomEmoji, renderEmoji } from "helpers/emoji.helper";
-// types
-import { IUser, IProject } from "types";
 // constants
-import { NETWORK_CHOICES } from "constants/project";
-import { useMobxStore } from "lib/mobx/store-provider";
+import { NETWORK_CHOICES, PROJECT_UNSPLASH_COVERS } from "constants/project";
+// constants
+import { EUserWorkspaceRoles } from "constants/workspace";
 
 type Props = {
   isOpen: boolean;
-  setIsOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  onClose: () => void;
   setToFavorite?: boolean;
-  user: IUser | undefined;
+  workspaceSlug: string;
 };
 
-const defaultValues: Partial<IProject> = {
-  cover_image:
-    "https://images.unsplash.com/photo-1531045535792-b515d59c3d1f?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=870&q=80",
-  description: "",
-  emoji_and_icon: getRandomEmoji(),
-  identifier: "",
-  name: "",
-  network: 2,
-  project_lead: null,
-};
+interface IIsGuestCondition {
+  onClose: () => void;
+}
 
-const IsGuestCondition: React.FC<{
-  setIsOpen: React.Dispatch<React.SetStateAction<boolean>>;
-}> = ({ setIsOpen }) => {
+const IsGuestCondition: FC<IIsGuestCondition> = ({ onClose }) => {
   const { setToastAlert } = useToast();
 
   useEffect(() => {
-    setIsOpen(false);
-
+    onClose();
     setToastAlert({
       title: "Error",
       type: "error",
       message: "You don't have permission to create project.",
     });
-  }, [setIsOpen, setToastAlert]);
+  }, [onClose, setToastAlert]);
 
   return null;
 };
 
-export const CreateProjectModal: React.FC<Props> = (props) => {
-  const { isOpen, setIsOpen, setToFavorite = false } = props;
+export interface ICreateProjectForm {
+  name: string;
+  identifier: string;
+  description: string;
+  emoji_and_icon: string;
+  network: number;
+  project_lead_member: string;
+  project_lead: string;
+  cover_image: string;
+  icon_prop: any;
+  emoji: string;
+}
+
+export const CreateProjectModal: FC<Props> = observer((props) => {
+  const { isOpen, onClose, setToFavorite = false, workspaceSlug } = props;
   // store
-  const { project: projectStore } = useMobxStore();
+  const {
+    eventTracker: { postHogEventTracker },
+  } = useApplication();
+  const {
+    membership: { currentWorkspaceRole },
+  } = useUser();
+  const { currentWorkspace } = useWorkspace();
+  const { addProjectToFavorites, createProject } = useProject();
   // states
   const [isChangeInIdentifierRequired, setIsChangeInIdentifierRequired] = useState(true);
-
+  // toast
   const { setToastAlert } = useToast();
-
-  const router = useRouter();
-  const { workspaceSlug } = router.query;
-
-  const { memberDetails } = useWorkspaceMyMembership();
-  const { workspaceMembers } = useWorkspaceMembers(workspaceSlug?.toString() ?? "");
-
+  // form info
+  const cover_image = PROJECT_UNSPLASH_COVERS[Math.floor(Math.random() * PROJECT_UNSPLASH_COVERS.length)];
   const {
     formState: { errors, isSubmitting },
     handleSubmit,
@@ -80,21 +82,34 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
     control,
     watch,
     setValue,
-  } = useForm<IProject>({
-    defaultValues,
+  } = useForm<ICreateProjectForm>({
+    defaultValues: {
+      cover_image,
+      description: "",
+      emoji_and_icon: getRandomEmoji(),
+      identifier: "",
+      name: "",
+      network: 2,
+      project_lead: undefined,
+    },
     reValidateMode: "onChange",
   });
 
+  const currentNetwork = NETWORK_CHOICES.find((n) => n.key === watch("network"));
+
+  if (currentWorkspaceRole && isOpen)
+    if (currentWorkspaceRole < EUserWorkspaceRoles.MEMBER) return <IsGuestCondition onClose={onClose} />;
+
   const handleClose = () => {
-    setIsOpen(false);
+    onClose();
     setIsChangeInIdentifierRequired(true);
-    reset(defaultValues);
+    reset();
   };
 
   const handleAddToFavorites = (projectId: string) => {
     if (!workspaceSlug) return;
 
-    projectStore.addProjectToFavorites(workspaceSlug.toString(), projectId).catch(() => {
+    addProjectToFavorites(workspaceSlug.toString(), projectId).catch(() => {
       setToastAlert({
         type: "error",
         title: "Error!",
@@ -103,18 +118,28 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
     });
   };
 
-  const onSubmit = async (formData: IProject) => {
-    if (!workspaceSlug) return;
-
+  const onSubmit = async (formData: ICreateProjectForm) => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { emoji_and_icon, ...payload } = formData;
+    const { emoji_and_icon, project_lead_member, ...payload } = formData;
 
     if (typeof formData.emoji_and_icon === "object") payload.icon_prop = formData.emoji_and_icon;
     else payload.emoji = formData.emoji_and_icon;
 
-    await projectStore
-      .createProject(workspaceSlug.toString(), payload)
+    payload.project_lead = formData.project_lead_member;
+    // Upper case identifier
+    payload.identifier = payload.identifier.toUpperCase();
+
+    return createProject(workspaceSlug.toString(), payload)
       .then((res) => {
+        const newPayload = {
+          ...res,
+          state: "SUCCESS",
+        };
+        postHogEventTracker("PROJECT_CREATED", newPayload, {
+          isGrouping: true,
+          groupType: "Workspace_metrics",
+          groupId: res.workspace,
+        });
         setToastAlert({
           type: "success",
           title: "Success!",
@@ -126,53 +151,43 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
         handleClose();
       })
       .catch((err) => {
-        Object.keys(err.data).map((key) =>
+        Object.keys(err.data).map((key) => {
           setToastAlert({
             type: "error",
             title: "Error!",
             message: err.data[key],
-          })
-        );
+          });
+          postHogEventTracker(
+            "PROJECT_CREATED",
+            {
+              state: "FAILED",
+            },
+            {
+              isGrouping: true,
+              groupType: "Workspace_metrics",
+              groupId: currentWorkspace?.id!,
+            }
+          );
+        });
       });
   };
 
-  const changeIdentifierOnNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!isChangeInIdentifierRequired) return;
-
+  const handleNameChange = (onChange: any) => (e: ChangeEvent<HTMLInputElement>) => {
+    if (!isChangeInIdentifierRequired) {
+      onChange(e);
+      return;
+    }
     if (e.target.value === "") setValue("identifier", "");
-    else
-      setValue(
-        "identifier",
-        e.target.value
-          .replace(/[^a-zA-Z0-9]/g, "")
-          .toUpperCase()
-          .substring(0, 5)
-      );
+    else setValue("identifier", e.target.value.replace(/[^ÇŞĞIİÖÜA-Za-z0-9]/g, "").substring(0, 5));
+    onChange(e);
   };
 
-  const handleIdentifierChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleIdentifierChange = (onChange: any) => (e: ChangeEvent<HTMLInputElement>) => {
     const { value } = e.target;
-
-    const alphanumericValue = value.replace(/[^a-zA-Z0-9]/g, "");
-
-    setValue("identifier", alphanumericValue.toUpperCase());
+    const alphanumericValue = value.replace(/[^ÇŞĞIİÖÜA-Za-z0-9]/g, "");
     setIsChangeInIdentifierRequired(false);
+    onChange(alphanumericValue);
   };
-
-  const options = workspaceMembers?.map((member: any) => ({
-    value: member.member.id,
-    query: member.member.display_name,
-    content: (
-      <div className="flex items-center gap-2">
-        <Avatar user={member.member} />
-        {member.member.display_name}
-      </div>
-    ),
-  }));
-
-  const currentNetwork = NETWORK_CHOICES.find((n) => n.key === watch("network"));
-
-  if (memberDetails && isOpen) if (memberDetails.role <= 10) return <IsGuestCondition setIsOpen={setIsOpen} />;
 
   return (
     <Transition.Root show={isOpen} as={Fragment}>
@@ -186,7 +201,7 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-custom-backdrop bg-opacity-50 transition-opacity" />
+          <div className="fixed inset-0 bg-custom-backdrop transition-opacity" />
         </Transition.Child>
 
         <div className="fixed inset-0 z-20 overflow-y-auto">
@@ -200,19 +215,19 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="transform rounded-lg bg-custom-background-100 text-left shadow-xl transition-all p-3 w-full sm:w-3/5 lg:w-1/2 xl:w-2/5">
+              <Dialog.Panel className="w-full transform rounded-lg bg-custom-background-100 p-3 text-left shadow-custom-shadow-md transition-all sm:w-3/5 lg:w-1/2 xl:w-2/5">
                 <div className="group relative h-44 w-full rounded-lg bg-custom-background-80">
                   {watch("cover_image") !== null && (
                     <img
                       src={watch("cover_image")!}
-                      className="absolute top-0 left-0 h-full w-full object-cover rounded-lg"
+                      className="absolute left-0 top-0 h-full w-full rounded-lg object-cover"
                       alt="Cover Image"
                     />
                   )}
 
                   <div className="absolute right-2 top-2 p-2">
-                    <button type="button" onClick={handleClose}>
-                      <XMarkIcon className="h-5 w-5 text-white" />
+                    <button data-posthog="PROJECT_MODAL_CLOSE" type="button" onClick={handleClose} tabIndex={8}>
+                      <X className="h-5 w-5 text-white" />
                     </button>
                   </div>
                   <div className="absolute bottom-2 right-2">
@@ -223,6 +238,7 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
                       }}
                       control={control}
                       value={watch("cover_image")}
+                      tabIndex={9}
                     />
                   </div>
                   <div className="absolute -bottom-[22px] left-3">
@@ -232,12 +248,13 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
                       render={({ field: { value, onChange } }) => (
                         <EmojiIconPicker
                           label={
-                            <div className="h-[44px] w-[44px] grid place-items-center rounded-md bg-custom-background-80 outline-none text-lg">
+                            <div className="grid h-[44px] w-[44px] place-items-center rounded-md bg-custom-background-80 text-lg outline-none">
                               {value ? renderEmoji(value) : "Icon"}
                             </div>
                           }
                           onChange={onChange}
                           value={value}
+                          tabIndex={10}
                         />
                       )}
                     />
@@ -245,7 +262,7 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
                 </div>
                 <form onSubmit={handleSubmit(onSubmit)} className="divide-y-[0.5px] divide-custom-border-100 px-3">
                   <div className="mt-9 space-y-6 pb-5">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-y-3 gap-x-2">
+                    <div className="grid grid-cols-1 gap-x-2 gap-y-3 md:grid-cols-4">
                       <div className="md:col-span-3">
                         <Controller
                           control={control}
@@ -257,20 +274,21 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
                               message: "Title should be less than 255 characters",
                             },
                           }}
-                          render={({ field: { value, ref } }) => (
+                          render={({ field: { value, onChange } }) => (
                             <Input
                               id="name"
                               name="name"
                               type="text"
                               value={value}
-                              onChange={changeIdentifierOnNameChange}
-                              ref={ref}
+                              onChange={handleNameChange(onChange)}
                               hasError={Boolean(errors.name)}
                               placeholder="Project Title"
-                              className="w-full"
+                              className="w-full focus:border-blue-400"
+                              tabIndex={1}
                             />
                           )}
                         />
+                        <span className="text-xs text-red-500">{errors?.name?.message}</span>
                       </div>
                       <div>
                         <Controller
@@ -278,8 +296,10 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
                           name="identifier"
                           rules={{
                             required: "Identifier is required",
+                            // allow only alphanumeric & non-latin characters
                             validate: (value) =>
-                              /^[A-Z0-9]+$/.test(value.toUpperCase()) || "Identifier must be in uppercase.",
+                              /^[ÇŞĞIİÖÜA-Z0-9]+$/.test(value.toUpperCase()) ||
+                              "Only Alphanumeric & Non-latin characters are allowed.",
                             minLength: {
                               value: 1,
                               message: "Identifier must at least be of 1 character",
@@ -289,20 +309,21 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
                               message: "Identifier must at most be of 12 characters",
                             },
                           }}
-                          render={({ field: { value, ref } }) => (
+                          render={({ field: { value, onChange } }) => (
                             <Input
                               id="identifier"
                               name="identifier"
                               type="text"
                               value={value}
-                              onChange={handleIdentifierChange}
-                              ref={ref}
-                              hasError={Boolean(errors.name)}
+                              onChange={handleIdentifierChange(onChange)}
+                              hasError={Boolean(errors.identifier)}
                               placeholder="Identifier"
-                              className="text-sm w-full"
+                              className="w-full text-xs focus:border-blue-400 uppercase"
+                              tabIndex={2}
                             />
                           )}
                         />
+                        <span className="text-xs text-red-500">{errors?.identifier?.message}</span>
                       </div>
                       <div className="md:col-span-4">
                         <Controller
@@ -315,29 +336,29 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
                               value={value}
                               placeholder="Description..."
                               onChange={onChange}
-                              className="text-sm !h-24"
-                              hasError={Boolean(errors?.name)}
+                              className="!h-24 text-sm focus:border-blue-400"
+                              hasError={Boolean(errors?.description)}
+                              tabIndex={3}
                             />
                           )}
                         />
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <div className="flex-shrink-0">
-                        <Controller
-                          name="network"
-                          control={control}
-                          render={({ field: { onChange, value } }) => (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Controller
+                        name="network"
+                        control={control}
+                        render={({ field: { onChange, value } }) => (
+                          <div className="flex-shrink-0" tabIndex={4}>
                             <CustomSelect
                               value={value}
                               onChange={onChange}
-                              buttonClassName="border-[0.5px] !px-2 shadow-md"
                               label={
-                                <div className="flex items-center gap-2 -mb-0.5 py-1">
+                                <div className="flex items-center gap-1">
                                   {currentNetwork ? (
                                     <>
-                                      <Icon iconName={currentNetwork?.icon} className="!text-xs" />
+                                      <currentNetwork.icon className="h-3 w-3" />
                                       {currentNetwork.label}
                                     </>
                                   ) : (
@@ -345,7 +366,9 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
                                   )}
                                 </div>
                               }
+                              placement="bottom-start"
                               noChevron
+                              tabIndex={4}
                             >
                               {NETWORK_CHOICES.map((network) => (
                                 <CustomSelect.Option
@@ -353,62 +376,38 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
                                   value={network.key}
                                   className="flex items-center gap-1"
                                 >
-                                  <Icon iconName={network.icon} className="!text-xs" />
+                                  <network.icon className="h-4 w-4" />
                                   {network.label}
                                 </CustomSelect.Option>
                               ))}
                             </CustomSelect>
-                          )}
-                        />
-                      </div>
-                      <div className="flex-shrink-0">
-                        <Controller
-                          name="project_lead"
-                          control={control}
-                          render={({ field: { value, onChange } }) => {
-                            const selectedMember = workspaceMembers?.find((m: any) => m.member.id === value);
-
-                            return (
-                              <CustomSearchSelect
-                                value={value}
-                                onChange={onChange}
-                                options={options}
-                                buttonClassName="border-[0.5px] !px-2 shadow-md"
-                                label={
-                                  <div className="flex items-center justify-center gap-2 py-[1px]">
-                                    {value ? (
-                                      <>
-                                        <Avatar user={selectedMember?.member} />
-                                        <span>{selectedMember?.member.display_name} </span>
-                                        <span onClick={() => onChange(null)}>
-                                          <Icon
-                                            iconName="close"
-                                            className="!text-xs -mb-0.5 text-custom-text-200 hover:text-custom-text-100"
-                                          />
-                                        </span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Icon iconName="group" className="!text-sm text-custom-text-400" />
-                                        <span className="text-custom-text-400">Lead</span>
-                                      </>
-                                    )}
-                                  </div>
-                                }
-                                noChevron
-                              />
-                            );
-                          }}
-                        />
-                      </div>
+                          </div>
+                        )}
+                      />
+                      <Controller
+                        name="project_lead_member"
+                        control={control}
+                        render={({ field: { value, onChange } }) => (
+                          <div className="h-7 flex-shrink-0" tabIndex={5}>
+                            <WorkspaceMemberDropdown
+                              value={value}
+                              onChange={onChange}
+                              placeholder="Lead"
+                              multiple={false}
+                              buttonVariant="border-with-text"
+                              tabIndex={5}
+                            />
+                          </div>
+                        )}
+                      />
                     </div>
                   </div>
 
                   <div className="flex justify-end gap-2 pt-5">
-                    <Button variant="neutral-primary" onClick={handleClose}>
+                    <Button variant="neutral-primary" size="sm" onClick={handleClose} tabIndex={6}>
                       Cancel
                     </Button>
-                    <Button variant="primary" type="submit" size="sm" loading={isSubmitting}>
+                    <Button variant="primary" type="submit" size="sm" loading={isSubmitting} tabIndex={7}>
                       {isSubmitting ? "Creating..." : "Create Project"}
                     </Button>
                   </div>
@@ -420,4 +419,4 @@ export const CreateProjectModal: React.FC<Props> = (props) => {
       </Dialog>
     </Transition.Root>
   );
-};
+});

@@ -1,100 +1,64 @@
 import React from "react";
-import { useRouter } from "next/router";
-// services
-import { TrackEventService } from "services/track_event.service";
-// hooks
-import useEstimateOption from "hooks/use-estimate-option";
+import { observer } from "mobx-react-lite";
+import { Triangle } from "lucide-react";
+import sortBy from "lodash/sortBy";
+// store hooks
+import { useEstimate } from "hooks/store";
 // ui
-import { CustomSelect } from "components/ui";
-import { Tooltip } from "@plane/ui";
-// icons
-import { PlayIcon } from "@heroicons/react/24/outline";
+import { CustomSelect, Tooltip } from "@plane/ui";
 // types
-import { IUser, IIssue } from "types";
+import { TIssue } from "@plane/types";
 
 type Props = {
-  issue: IIssue;
-  partialUpdateIssue: (formData: Partial<IIssue>, issue: IIssue) => void;
-  position?: "left" | "right";
+  issue: TIssue;
+  onChange: (data: number) => void;
   tooltipPosition?: "top" | "bottom";
-  selfPositioned?: boolean;
   customButton?: boolean;
-  user: IUser | undefined;
-  isNotAllowed: boolean;
+  disabled: boolean;
 };
 
-const trackEventService = new TrackEventService();
+export const ViewEstimateSelect: React.FC<Props> = observer((props) => {
+  const { issue, onChange, tooltipPosition = "top", customButton = false, disabled } = props;
+  const { areEstimatesEnabledForCurrentProject, activeEstimateDetails, getEstimatePointValue } = useEstimate();
 
-export const ViewEstimateSelect: React.FC<Props> = ({
-  issue,
-  partialUpdateIssue,
-  // position = "left",
-  tooltipPosition = "top",
-  // selfPositioned = false,
-  customButton = false,
-  user,
-  isNotAllowed,
-}) => {
-  const router = useRouter();
-  const { workspaceSlug } = router.query;
-
-  const { isEstimateActive, estimatePoints } = useEstimateOption(issue.estimate_point);
-
-  const estimateValue = estimatePoints?.find((e) => e.key === issue.estimate_point)?.value;
+  const estimateValue = getEstimatePointValue(issue.estimate_point, issue.project_id);
 
   const estimateLabels = (
     <Tooltip tooltipHeading="Estimate" tooltipContent={estimateValue} position={tooltipPosition}>
       <div className="flex items-center gap-1 text-custom-text-200">
-        <PlayIcon className="h-3.5 w-3.5 -rotate-90" />
+        <Triangle className="h-3 w-3" />
         {estimateValue ?? "None"}
       </div>
     </Tooltip>
   );
 
-  if (!isEstimateActive) return null;
+  if (!areEstimatesEnabledForCurrentProject) return null;
 
   return (
     <CustomSelect
       value={issue.estimate_point}
-      onChange={(val: number) => {
-        partialUpdateIssue({ estimate_point: val }, issue);
-        trackEventService.trackIssuePartialPropertyUpdateEvent(
-          {
-            workspaceSlug,
-            workspaceId: issue.workspace,
-            projectId: issue.project_detail.id,
-            projectIdentifier: issue.project_detail.identifier,
-            projectName: issue.project_detail.name,
-            issueId: issue.id,
-          },
-          "ISSUE_PROPERTY_UPDATE_ESTIMATE",
-          user as IUser
-        );
-      }}
+      onChange={onChange}
       {...(customButton ? { customButton: estimateLabels } : { label: estimateLabels })}
       maxHeight="md"
       noChevron
-      disabled={isNotAllowed}
-      width="w-full min-w-[8rem]"
+      disabled={disabled}
     >
       <CustomSelect.Option value={null}>
         <>
           <span>
-            <PlayIcon className="h-4 w-4 -rotate-90" />
+            <Triangle className="h-3 w-3" />
           </span>
           None
         </>
       </CustomSelect.Option>
-      {estimatePoints?.map((estimate) => (
+      {sortBy(activeEstimateDetails?.points, "key")?.map((estimate) => (
         <CustomSelect.Option key={estimate.id} value={estimate.key}>
           <>
-            <span>
-              <PlayIcon className="h-4 w-4 -rotate-90" />
-            </span>
+            <Triangle className="h-3 w-3" />
             {estimate.value}
           </>
         </CustomSelect.Option>
       ))}
     </CustomSelect>
   );
-};
+});

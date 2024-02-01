@@ -1,23 +1,47 @@
-import React from "react";
+import React, { useState } from "react";
 import { Popover, Transition } from "@headlessui/react";
 import { observer } from "mobx-react-lite";
-
-// mobx store
-import { useMobxStore } from "lib/mobx/store-provider";
+import { usePopper } from "react-popper";
+//hooks
+import { useCalendarView } from "hooks/store";
 // icons
 import { ChevronLeft, ChevronRight } from "lucide-react";
 // constants
 import { MONTHS_LIST } from "constants/calendar";
+import { ICycleIssuesFilter } from "store/issue/cycle";
+import { IModuleIssuesFilter } from "store/issue/module";
+import { IProjectIssuesFilter } from "store/issue/project";
+import { IProjectViewIssuesFilter } from "store/issue/project-views";
 
-export const CalendarMonthsDropdown: React.FC = observer(() => {
-  const { calendar: calendarStore, issueFilter: issueFilterStore } = useMobxStore();
+interface Props {
+  issuesFilterStore: IProjectIssuesFilter | IModuleIssuesFilter | ICycleIssuesFilter | IProjectViewIssuesFilter;
+}
+export const CalendarMonthsDropdown: React.FC<Props> = observer((props: Props) => {
+  const { issuesFilterStore } = props;
 
-  const calendarLayout = issueFilterStore.userDisplayFilters.calendar?.layout ?? "month";
+  const issueCalendarView = useCalendarView();
 
-  const { activeMonthDate } = calendarStore.calendarFilters;
+  const calendarLayout = issuesFilterStore.issueFilters?.displayFilters?.calendar?.layout ?? "month";
+
+  const [referenceElement, setReferenceElement] = useState<HTMLButtonElement | null>(null);
+  const [popperElement, setPopperElement] = useState<HTMLDivElement | null>(null);
+
+  const { styles, attributes } = usePopper(referenceElement, popperElement, {
+    placement: "auto",
+    modifiers: [
+      {
+        name: "preventOverflow",
+        options: {
+          padding: 12,
+        },
+      },
+    ],
+  });
+
+  const { activeMonthDate } = issueCalendarView.calendarFilters;
 
   const getWeekLayoutHeader = (): string => {
-    const allDaysOfActiveWeek = calendarStore.allDaysOfActiveWeek;
+    const allDaysOfActiveWeek = issueCalendarView.allDaysOfActiveWeek;
 
     if (!allDaysOfActiveWeek) return "Week view";
 
@@ -40,17 +64,24 @@ export const CalendarMonthsDropdown: React.FC = observer(() => {
   };
 
   const handleDateChange = (date: Date) => {
-    calendarStore.updateCalendarFilters({
+    issueCalendarView.updateCalendarFilters({
       activeMonthDate: date,
     });
   };
 
   return (
     <Popover className="relative">
-      <Popover.Button className="outline-none text-xl font-semibold" disabled={calendarLayout === "week"}>
-        {calendarLayout === "month"
-          ? `${MONTHS_LIST[activeMonthDate.getMonth() + 1].title} ${activeMonthDate.getFullYear()}`
-          : getWeekLayoutHeader()}
+      <Popover.Button as={React.Fragment}>
+        <button
+          type="button"
+          ref={setReferenceElement}
+          className="text-xl font-semibold outline-none"
+          disabled={calendarLayout === "week"}
+        >
+          {calendarLayout === "month"
+            ? `${MONTHS_LIST[activeMonthDate.getMonth() + 1].title} ${activeMonthDate.getFullYear()}`
+            : getWeekLayoutHeader()}
+        </button>
       </Popover.Button>
       <Transition
         as={React.Fragment}
@@ -61,8 +92,13 @@ export const CalendarMonthsDropdown: React.FC = observer(() => {
         leaveFrom="opacity-100 translate-y-0"
         leaveTo="opacity-0 translate-y-1"
       >
-        <Popover.Panel>
-          <div className="absolute left-0 z-10 mt-1 bg-custom-background-100 border border-custom-border-200 shadow-custom-shadow-rg rounded w-56 p-3 divide-y divide-custom-border-200">
+        <Popover.Panel className="fixed z-50">
+          <div
+            ref={setPopperElement}
+            style={styles.popper}
+            {...attributes.popper}
+            className="w-56 divide-y divide-custom-border-200 rounded border border-custom-border-200 bg-custom-background-100 p-3 shadow-custom-shadow-rg"
+          >
             <div className="flex items-center justify-between gap-2 pb-3">
               <button
                 type="button"
@@ -86,12 +122,12 @@ export const CalendarMonthsDropdown: React.FC = observer(() => {
                 <ChevronRight size={14} />
               </button>
             </div>
-            <div className="grid grid-cols-4 gap-4 items-stretch justify-items-stretch pt-3">
+            <div className="grid grid-cols-4 items-stretch justify-items-stretch gap-4 pt-3">
               {Object.values(MONTHS_LIST).map((month, index) => (
                 <button
                   key={month.shortTitle}
                   type="button"
-                  className="text-xs hover:bg-custom-background-80 rounded py-0.5"
+                  className="rounded py-0.5 text-xs hover:bg-custom-background-80"
                   onClick={() => {
                     const newDate = new Date(activeMonthDate.getFullYear(), index, 1);
                     handleDateChange(newDate);

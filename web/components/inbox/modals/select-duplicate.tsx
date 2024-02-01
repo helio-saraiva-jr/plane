@@ -8,12 +8,12 @@ import useToast from "hooks/use-toast";
 // services
 import { IssueService } from "services/issue";
 // ui
-import { Button } from "@plane/ui";
+import { Button, LayersIcon } from "@plane/ui";
 // icons
-import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
-import { LayerDiagonalIcon } from "components/icons";
+import { Search } from "lucide-react";
 // fetch-keys
 import { PROJECT_ISSUES_LIST } from "constants/fetch-keys";
+import { useProject, useProjectState } from "hooks/store";
 
 type Props = {
   isOpen: boolean;
@@ -35,13 +35,17 @@ export const SelectDuplicateInboxIssueModal: React.FC<Props> = (props) => {
   const router = useRouter();
   const { workspaceSlug, projectId, issueId } = router.query;
 
+  // hooks
+  const { getProjectStates } = useProjectState();
+  const { getProjectById } = useProject();
+
   const { data: issues } = useSWR(
     workspaceSlug && projectId ? PROJECT_ISSUES_LIST(workspaceSlug as string, projectId as string) : null,
     workspaceSlug && projectId
       ? () =>
           issueService
             .getIssues(workspaceSlug as string, projectId as string)
-            .then((res) => res.filter((issue) => issue.id !== issueId))
+            .then((res) => Object.values(res ?? {}).filter((issue) => issue.id !== issueId))
       : null
   );
 
@@ -82,7 +86,7 @@ export const SelectDuplicateInboxIssueModal: React.FC<Props> = (props) => {
               leaveFrom="opacity-100"
               leaveTo="opacity-0"
             >
-              <div className="fixed inset-0 bg-custom-backdrop bg-opacity-50 transition-opacity" />
+              <div className="fixed inset-0 bg-custom-backdrop transition-opacity" />
             </Transition.Child>
 
             <div className="fixed inset-0 z-20 overflow-y-auto p-4 sm:p-6 md:p-20">
@@ -95,7 +99,7 @@ export const SelectDuplicateInboxIssueModal: React.FC<Props> = (props) => {
                 leaveFrom="opacity-100 scale-100"
                 leaveTo="opacity-0 scale-95"
               >
-                <Dialog.Panel className="relative mx-auto max-w-2xl transform rounded-xl border border-custom-border-200 bg-custom-background-100 shadow-2xl transition-all">
+                <Dialog.Panel className="relative mx-auto max-w-2xl transform rounded-lg bg-custom-background-100 shadow-custom-shadow-md transition-all">
                   <Combobox
                     value={selectedItem}
                     onChange={(value) => {
@@ -103,8 +107,8 @@ export const SelectDuplicateInboxIssueModal: React.FC<Props> = (props) => {
                     }}
                   >
                     <div className="relative m-1">
-                      <MagnifyingGlassIcon
-                        className="pointer-events-none absolute top-3.5 left-4 h-5 w-5 text-custom-text-100 text-opacity-40"
+                      <Search
+                        className="pointer-events-none absolute left-4 top-3.5 h-5 w-5 text-custom-text-100 text-opacity-40"
                         aria-hidden="true"
                       />
                       <input
@@ -122,40 +126,45 @@ export const SelectDuplicateInboxIssueModal: React.FC<Props> = (props) => {
                       {filteredIssues.length > 0 ? (
                         <li className="p-2">
                           {query === "" && (
-                            <h2 className="mt-4 mb-2 px-3 text-xs font-semibold text-custom-text-100">Select issue</h2>
+                            <h2 className="mb-2 mt-4 px-3 text-xs font-semibold text-custom-text-100">Select issue</h2>
                           )}
                           <ul className="text-sm text-custom-text-100">
-                            {filteredIssues.map((issue) => (
-                              <Combobox.Option
-                                key={issue.id}
-                                as="div"
-                                value={issue.id}
-                                className={({ active, selected }) =>
-                                  `flex w-full cursor-pointer select-none items-center gap-2 rounded-md px-3 py-2 text-custom-text-200 ${
-                                    active || selected ? "bg-custom-background-80 text-custom-text-100" : ""
-                                  } `
-                                }
-                              >
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className="block h-1.5 w-1.5 flex-shrink-0 rounded-full"
-                                    style={{
-                                      backgroundColor: issue.state_detail.color,
-                                    }}
-                                  />
-                                  <span className="flex-shrink-0 text-xs text-custom-text-200">
-                                    {issues?.find((i) => i.id === issue.id)?.project_detail?.identifier}-
-                                    {issue.sequence_id}
-                                  </span>
-                                  <span className="text-custom-text-200">{issue.name}</span>
-                                </div>
-                              </Combobox.Option>
-                            ))}
+                            {filteredIssues.map((issue) => {
+                              const stateColor =
+                                getProjectStates(issue?.project_id)?.find((state) => state?.id == issue?.state_id)
+                                  ?.color || "";
+
+                              return (
+                                <Combobox.Option
+                                  key={issue.id}
+                                  as="div"
+                                  value={issue.id}
+                                  className={({ active, selected }) =>
+                                    `flex w-full cursor-pointer select-none items-center gap-2 rounded-md px-3 py-2 text-custom-text-200 ${
+                                      active || selected ? "bg-custom-background-80 text-custom-text-100" : ""
+                                    } `
+                                  }
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className="block h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                                      style={{
+                                        backgroundColor: stateColor,
+                                      }}
+                                    />
+                                    <span className="flex-shrink-0 text-xs text-custom-text-200">
+                                      {getProjectById(issue?.project_id)?.identifier}-{issue.sequence_id}
+                                    </span>
+                                    <span className="text-custom-text-200">{issue.name}</span>
+                                  </div>
+                                </Combobox.Option>
+                              );
+                            })}
                           </ul>
                         </li>
                       ) : (
                         <div className="flex flex-col items-center justify-center gap-4 px-3 py-8 text-center">
-                          <LayerDiagonalIcon height="56" width="56" />
+                          <LayersIcon height="56" width="56" />
                           <h3 className="text-sm text-custom-text-200">
                             No issues found. Create a new issue with{" "}
                             <pre className="inline rounded bg-custom-background-80 px-2 py-1">C</pre>.
@@ -167,10 +176,10 @@ export const SelectDuplicateInboxIssueModal: React.FC<Props> = (props) => {
 
                   {filteredIssues.length > 0 && (
                     <div className="flex items-center justify-end gap-2 p-3">
-                      <Button variant="neutral-primary" onClick={handleClose}>
+                      <Button variant="neutral-primary" size="sm" onClick={handleClose}>
                         Cancel
                       </Button>
-                      <Button variant="primary" onClick={handleSubmit}>
+                      <Button variant="primary" size="sm" onClick={handleSubmit}>
                         Mark as original
                       </Button>
                     </div>

@@ -4,7 +4,7 @@ import { observer } from "mobx-react-lite";
 // components
 import { FilterHeader, FilterOption } from "components/issues";
 // types
-import { TIssueOrderByOptions } from "types";
+import { TIssueOrderByOptions } from "@plane/types";
 // constants
 import { ISSUE_ORDER_BY_OPTIONS } from "constants/issue";
 
@@ -19,6 +19,8 @@ export const FilterOrderBy: React.FC<Props> = observer((props) => {
 
   const [previewEnabled, setPreviewEnabled] = useState(true);
 
+  const activeOrderBy = selectedOrderBy ?? "-created_at";
+
   return (
     <>
       <FilterHeader
@@ -31,7 +33,7 @@ export const FilterOrderBy: React.FC<Props> = observer((props) => {
           {ISSUE_ORDER_BY_OPTIONS.filter((option) => orderByOptions.includes(option.key)).map((orderBy) => (
             <FilterOption
               key={orderBy?.key}
-              isChecked={selectedOrderBy === orderBy?.key ? true : false}
+              isChecked={activeOrderBy === orderBy?.key ? true : false}
               onClick={() => handleUpdate(orderBy.key)}
               title={orderBy.title}
               multiple={false}

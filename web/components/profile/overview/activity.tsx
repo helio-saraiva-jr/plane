@@ -1,27 +1,30 @@
 import { useRouter } from "next/router";
-
 import useSWR from "swr";
-
+import { observer } from "mobx-react";
+//hooks
+import { useUser } from "hooks/store";
 // services
 import { UserService } from "services/user.service";
 // components
-import { ActivityMessage } from "components/core";
+import { ActivityMessage, IssueLink } from "components/core";
 // ui
-import { ProfileEmptyState, Icon } from "components/ui";
+import { ProfileEmptyState } from "components/ui";
 import { Loader } from "@plane/ui";
 // image
 import recentActivityEmptyState from "public/empty-state/recent_activity.svg";
 // helpers
-import { timeAgo } from "helpers/date-time.helper";
+import { calculateTimeAgo } from "helpers/date-time.helper";
 // fetch-keys
 import { USER_PROFILE_ACTIVITY } from "constants/fetch-keys";
 
 // services
 const userService = new UserService();
 
-export const ProfileActivity = () => {
+export const ProfileActivity = observer(() => {
   const router = useRouter();
   const { workspaceSlug, userId } = router.query;
+  // store hooks
+  const { currentUser } = useUser();
 
   const { data: userProfileActivity } = useSWR(
     workspaceSlug && userId ? USER_PROFILE_ACTIVITY(workspaceSlug.toString(), userId.toString()) : null,
@@ -33,7 +36,7 @@ export const ProfileActivity = () => {
   return (
     <div className="space-y-2">
       <h3 className="text-lg font-medium">Recent Activity</h3>
-      <div className="border border-custom-border-100 rounded p-6">
+      <div className="rounded border border-custom-border-100 p-6">
         {userProfileActivity ? (
           userProfileActivity.results.length > 0 ? (
             <div className="space-y-5">
@@ -56,25 +59,18 @@ export const ProfileActivity = () => {
                   </div>
                   <div className="-mt-1 w-4/5 break-words">
                     <p className="text-sm text-custom-text-200">
-                      <span className="font-medium text-custom-text-100">{activity.actor_detail.display_name} </span>
+                      <span className="font-medium text-custom-text-100">
+                        {currentUser?.id === activity.actor_detail.id ? "You" : activity.actor_detail.display_name}{" "}
+                      </span>
                       {activity.field ? (
                         <ActivityMessage activity={activity} showIssue />
                       ) : (
                         <span>
-                          created this{" "}
-                          <a
-                            href={`/${workspaceSlug}/projects/${activity.project}/issues/${activity.issue}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-medium text-custom-text-100 inline-flex items-center gap-1 hover:underline"
-                          >
-                            Issue
-                            <Icon iconName="launch" className="!text-xs" />
-                          </a>
+                          created <IssueLink activity={activity} />
                         </span>
                       )}
                     </p>
-                    <p className="text-xs text-custom-text-200">{timeAgo(activity.created_at)}</p>
+                    <p className="text-xs text-custom-text-200">{calculateTimeAgo(activity.created_at)}</p>
                   </div>
                 </div>
               ))}
@@ -98,4 +94,4 @@ export const ProfileActivity = () => {
       </div>
     </div>
   );
-};
+});

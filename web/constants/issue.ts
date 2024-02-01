@@ -1,17 +1,42 @@
 // icons
-import { Calendar, GanttChart, Kanban, List, Sheet } from "lucide-react";
+import { Calendar, GanttChartSquare, Kanban, List, Sheet } from "lucide-react";
 // types
 import {
-  IIssueDisplayProperties,
   IIssueFilterOptions,
+  IIssueDisplayProperties,
   TIssueExtraOptions,
   TIssueGroupByOptions,
   TIssueLayouts,
   TIssueOrderByOptions,
   TIssuePriorities,
   TIssueTypeFilters,
-  TStateGroups,
-} from "types";
+} from "@plane/types";
+
+export enum EIssuesStoreType {
+  GLOBAL = "GLOBAL",
+  PROFILE = "PROFILE",
+  PROJECT = "PROJECT",
+  CYCLE = "CYCLE",
+  MODULE = "MODULE",
+  PROJECT_VIEW = "PROJECT_VIEW",
+  ARCHIVED = "ARCHIVED",
+  DRAFT = "DRAFT",
+  DEFAULT = "DEFAULT",
+}
+
+export type TCreateModalStoreTypes =
+  | EIssuesStoreType.PROJECT
+  | EIssuesStoreType.PROJECT_VIEW
+  | EIssuesStoreType.PROFILE
+  | EIssuesStoreType.CYCLE
+  | EIssuesStoreType.MODULE;
+
+export enum EIssueFilterType {
+  FILTERS = "filters",
+  DISPLAY_FILTERS = "display_filters",
+  DISPLAY_PROPERTIES = "display_properties",
+  KANBAN_FILTERS = "kanban_filters",
+}
 
 export const ISSUE_PRIORITIES: {
   key: TIssuePriorities;
@@ -23,21 +48,6 @@ export const ISSUE_PRIORITIES: {
   { key: "low", title: "Low" },
   { key: "none", title: "None" },
 ];
-
-export const issuePriorityByKey = (key: string) => ISSUE_PRIORITIES.find((item) => item.key === key) || null;
-
-export const ISSUE_STATE_GROUPS: {
-  key: TStateGroups;
-  title: string;
-}[] = [
-  { key: "backlog", title: "Backlog" },
-  { key: "unstarted", title: "Unstarted" },
-  { key: "started", title: "Started" },
-  { key: "completed", title: "Completed" },
-  { key: "cancelled", title: "Cancelled" },
-];
-
-export const issueStateGroupByKey = (key: string) => ISSUE_STATE_GROUPS.find((item) => item.key === key) || null;
 
 export const ISSUE_START_DATE_OPTIONS = [
   { key: "last_week", title: "Last Week" },
@@ -113,7 +123,7 @@ export const ISSUE_EXTRA_OPTIONS: {
   title: string;
 }[] = [
   { key: "sub_issue", title: "Show sub-issues" }, // in spreadsheet its always false
-  { key: "show_empty_groups", title: "Show empty states" }, // filter on front-end
+  { key: "show_empty_groups", title: "Show empty groups" }, // filter on front-end
 ];
 
 export const ISSUE_LAYOUTS: {
@@ -125,10 +135,11 @@ export const ISSUE_LAYOUTS: {
   { key: "kanban", title: "Kanban Layout", icon: Kanban },
   { key: "calendar", title: "Calendar Layout", icon: Calendar },
   { key: "spreadsheet", title: "Spreadsheet Layout", icon: Sheet },
-  { key: "gantt_chart", title: "Gantt Chart Layout", icon: GanttChart },
+  { key: "gantt_chart", title: "Gantt Chart Layout", icon: GanttChartSquare },
 ];
 
 export const ISSUE_LIST_FILTERS = [
+  { key: "mentions", title: "Mentions" },
   { key: "priority", title: "Priority" },
   { key: "state", title: "State" },
   { key: "assignees", title: "Assignees" },
@@ -220,12 +231,113 @@ export interface ILayoutDisplayFiltersOptions {
 export const ISSUE_DISPLAY_FILTERS_BY_LAYOUT: {
   [pageType: string]: { [layoutType: string]: ILayoutDisplayFiltersOptions };
 } = {
-  my_issues: {
-    spreadsheet: {
-      filters: ["priority", "state_group", "labels", "assignees", "created_by", "project", "start_date", "target_date"],
+  profile_issues: {
+    list: {
+      filters: ["priority", "state_group", "labels", "start_date", "target_date"],
       display_properties: true,
       display_filters: {
+        group_by: ["state_detail.group", "priority", "project", "labels", null],
         order_by: ["sort_order", "-created_at", "-updated_at", "start_date", "priority"],
+        type: [null, "active", "backlog"],
+      },
+      extra_options: {
+        access: true,
+        values: ["show_empty_groups"],
+      },
+    },
+    kanban: {
+      filters: ["priority", "state_group", "labels", "start_date", "target_date"],
+      display_properties: true,
+      display_filters: {
+        group_by: ["state_detail.group", "priority", "project", "labels"],
+        order_by: ["sort_order", "-created_at", "-updated_at", "start_date", "priority"],
+        type: [null, "active", "backlog"],
+      },
+      extra_options: {
+        access: true,
+        values: ["show_empty_groups"],
+      },
+    },
+  },
+  archived_issues: {
+    list: {
+      filters: ["priority", "state", "assignees", "created_by", "labels", "start_date", "target_date"],
+      display_properties: true,
+      display_filters: {
+        group_by: ["state", "state_detail.group", "priority", "labels", "assignees", "created_by", null],
+        order_by: ["sort_order", "-created_at", "-updated_at", "start_date", "priority"],
+        type: [null, "active", "backlog"],
+      },
+      extra_options: {
+        access: true,
+        values: ["show_empty_groups"],
+      },
+    },
+  },
+  draft_issues: {
+    list: {
+      filters: ["priority", "state_group", "labels", "start_date", "target_date"],
+      display_properties: true,
+      display_filters: {
+        group_by: ["state_detail.group", "priority", "project", "labels", null],
+        order_by: ["sort_order", "-created_at", "-updated_at", "start_date", "priority"],
+        type: [null, "active", "backlog"],
+      },
+      extra_options: {
+        access: true,
+        values: ["show_empty_groups"],
+      },
+    },
+    kanban: {
+      filters: ["priority", "state_group", "labels", "start_date", "target_date"],
+      display_properties: true,
+      display_filters: {
+        group_by: ["state_detail.group", "priority", "project", "labels"],
+        order_by: ["sort_order", "-created_at", "-updated_at", "start_date", "priority"],
+        type: [null, "active", "backlog"],
+      },
+      extra_options: {
+        access: true,
+        values: ["show_empty_groups"],
+      },
+    },
+  },
+  my_issues: {
+    spreadsheet: {
+      filters: [
+        "priority",
+        "state_group",
+        "labels",
+        "assignees",
+        "created_by",
+        "subscriber",
+        "project",
+        "start_date",
+        "target_date",
+      ],
+      display_properties: true,
+      display_filters: {
+        type: [null, "active", "backlog"],
+      },
+      extra_options: {
+        access: false,
+        values: [],
+      },
+    },
+    list: {
+      filters: [
+        "priority",
+        "state_group",
+        "labels",
+        "assignees",
+        "created_by",
+        "subscriber",
+        "project",
+        "start_date",
+        "target_date",
+      ],
+      display_properties: true,
+      display_filters: {
         type: [null, "active", "backlog"],
       },
       extra_options: {
@@ -236,7 +348,7 @@ export const ISSUE_DISPLAY_FILTERS_BY_LAYOUT: {
   },
   issues: {
     list: {
-      filters: ["priority", "state", "assignees", "created_by", "labels", "start_date", "target_date"],
+      filters: ["priority", "state", "assignees", "mentions", "created_by", "labels", "start_date", "target_date"],
       display_properties: true,
       display_filters: {
         group_by: ["state", "priority", "labels", "assignees", "created_by", null],
@@ -249,7 +361,7 @@ export const ISSUE_DISPLAY_FILTERS_BY_LAYOUT: {
       },
     },
     kanban: {
-      filters: ["priority", "state", "assignees", "created_by", "labels", "start_date", "target_date"],
+      filters: ["priority", "state", "assignees", "mentions", "created_by", "labels", "start_date", "target_date"],
       display_properties: true,
       display_filters: {
         group_by: ["state", "priority", "labels", "assignees", "created_by"],
@@ -263,7 +375,7 @@ export const ISSUE_DISPLAY_FILTERS_BY_LAYOUT: {
       },
     },
     calendar: {
-      filters: ["priority", "state", "assignees", "created_by", "labels", "start_date"],
+      filters: ["priority", "state", "assignees", "mentions", "created_by", "labels", "start_date"],
       display_properties: true,
       display_filters: {
         type: [null, "active", "backlog"],
@@ -274,7 +386,7 @@ export const ISSUE_DISPLAY_FILTERS_BY_LAYOUT: {
       },
     },
     spreadsheet: {
-      filters: ["priority", "state", "assignees", "created_by", "labels", "start_date", "target_date"],
+      filters: ["priority", "state", "assignees", "mentions", "created_by", "labels", "start_date", "target_date"],
       display_properties: true,
       display_filters: {
         order_by: ["sort_order", "-created_at", "-updated_at", "start_date", "priority"],
@@ -286,7 +398,7 @@ export const ISSUE_DISPLAY_FILTERS_BY_LAYOUT: {
       },
     },
     gantt_chart: {
-      filters: ["priority", "state", "assignees", "created_by", "labels", "start_date", "target_date"],
+      filters: ["priority", "state", "assignees", "mentions", "created_by", "labels", "start_date", "target_date"],
       display_properties: false,
       display_filters: {
         order_by: ["sort_order", "-created_at", "-updated_at", "start_date", "priority"],
@@ -306,6 +418,28 @@ export const getValueFromObject = (object: Object, key: string): string | number
   let value: any = object;
   if (!value || keys.length === 0) return null;
 
-  for (const _key of keys) value = value[_key];
+  for (const _key of keys) value = value?.[_key];
   return value;
+};
+
+// issue reactions
+export const issueReactionEmojis = ["128077", "128078", "128516", "128165", "128533", "129505", "9992", "128064"];
+
+export const groupReactionEmojis = (reactions: any) => {
+  let _groupedEmojis: any = {};
+
+  issueReactionEmojis.map((_r) => {
+    _groupedEmojis = { ..._groupedEmojis, [_r]: [] };
+  });
+
+  if (reactions && reactions.length > 0) {
+    reactions.map((_reaction: any) => {
+      _groupedEmojis = {
+        ..._groupedEmojis,
+        [_reaction.reaction]: [..._groupedEmojis[_reaction.reaction], _reaction],
+      };
+    });
+  }
+
+  return _groupedEmojis;
 };

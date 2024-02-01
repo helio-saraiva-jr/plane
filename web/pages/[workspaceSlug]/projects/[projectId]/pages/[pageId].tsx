@@ -1,654 +1,382 @@
-import React, { useEffect, useRef, useState } from "react";
-
+import { Sparkle } from "lucide-react";
+import { observer } from "mobx-react-lite";
+import useSWR from "swr";
 import { useRouter } from "next/router";
-
-import useSWR, { mutate } from "swr";
-
-// react-hook-form
+import { ReactElement, useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-// headless ui
-import { Popover, Transition } from "@headlessui/react";
-// react-color
-import { TwitterPicker } from "react-color";
-// react-beautiful-dnd
-import { DragDropContext, DropResult } from "react-beautiful-dnd";
-import StrictModeDroppable from "components/dnd/StrictModeDroppable";
-// services
-import { ProjectService } from "services/project";
-import { PageService } from "services/page.service";
-import { IssueLabelService } from "services/issue";
 // hooks
+
+import { useApplication, usePage, useUser, useWorkspace } from "hooks/store";
+import useReloadConfirmations from "hooks/use-reload-confirmation";
 import useToast from "hooks/use-toast";
-import useUser from "hooks/use-user";
+// services
+import { FileService } from "services/file.service";
 // layouts
-import { ProjectAuthorizationWrapper } from "layouts/auth-layout-legacy";
+import { AppLayout } from "layouts/app-layout";
 // components
-import { CreateUpdateBlockInline, SinglePageBlock } from "components/pages";
-import { CreateLabelModal } from "components/labels";
-import { CreateBlock } from "components/pages/create-block";
+import { GptAssistantPopover } from "components/core";
+import { PageDetailsHeader } from "components/headers/page-details";
 // ui
-import { BreadcrumbItem, Breadcrumbs } from "components/breadcrumbs";
-import { CustomSearchSelect } from "components/ui";
-import { EmptyState } from "components/common";
-import { TextArea, Loader, ToggleSwitch, Tooltip } from "@plane/ui";
-// images
-import emptyPage from "public/empty-state/page.svg";
-// icons
-import {
-  ArrowLeftIcon,
-  LockClosedIcon,
-  LockOpenIcon,
-  PlusIcon,
-  StarIcon,
-  LinkIcon,
-  XMarkIcon,
-  ChevronDownIcon,
-} from "@heroicons/react/24/outline";
-import { ColorPalletteIcon } from "components/icons";
+import { DocumentEditorWithRef, DocumentReadOnlyEditorWithRef } from "@plane/document-editor";
+import { Spinner } from "@plane/ui";
+// assets
 // helpers
-import { render24HourFormatTime, renderShortDate } from "helpers/date-time.helper";
-import { copyTextToClipboard, truncateText } from "helpers/string.helper";
-import { orderArrayBy } from "helpers/array.helper";
 // types
-import type { NextPage } from "next";
-import { IIssueLabels, IPage, IPageBlock, IProjectMember } from "types";
+import { IPage } from "@plane/types";
+import { NextPageWithLayout } from "lib/types";
 // fetch-keys
-import {
-  PAGE_BLOCKS_LIST,
-  PAGE_DETAILS,
-  PROJECT_DETAILS,
-  PROJECT_ISSUE_LABELS,
-  USER_PROJECT_VIEW,
-} from "constants/fetch-keys";
+// constants
+import { EUserProjectRoles } from "constants/project";
+import { useProjectPages } from "hooks/store/use-project-specific-pages";
+import { IssuePeekOverview } from "components/issues";
 
 // services
-const projectService = new ProjectService();
-const pageService = new PageService();
-const issueLabelService = new IssueLabelService();
+const fileService = new FileService();
 
-const SinglePage: NextPage = () => {
-  const [createBlockForm, setCreateBlockForm] = useState(false);
-  const [labelModal, setLabelModal] = useState(false);
-  const [showBlock, setShowBlock] = useState(false);
-
-  const scrollToRef = useRef<HTMLDivElement>(null);
-
+const PageDetailsPage: NextPageWithLayout = observer(() => {
+  // states
+  const [gptModalOpen, setGptModal] = useState(false);
+  // refs
+  const editorRef = useRef<any>(null);
+  // router
   const router = useRouter();
-  const { workspaceSlug, projectId, pageId } = router.query;
 
+  const { workspaceSlug, projectId, pageId } = router.query;
+  const workspaceStore = useWorkspace();
+  const workspaceId = workspaceStore.getWorkspaceBySlug(workspaceSlug as string)?.id as string;
+
+  // store hooks
+  const {
+    config: { envConfig },
+  } = useApplication();
+  const {
+    currentUser,
+    membership: { currentProjectRole },
+  } = useUser();
+  // toast alert
   const { setToastAlert } = useToast();
 
-  const { user } = useUser();
+  //TODO:fix reload confirmations, with mobx
+  const { setShowAlert } = useReloadConfirmations();
 
-  const { handleSubmit, reset, watch, setValue, control } = useForm<IPage>({
-    defaultValues: { name: "" },
+  const { handleSubmit, setValue, watch, getValues, control, reset } = useForm<IPage>({
+    defaultValues: { name: "", description_html: "" },
   });
 
-  const { data: projectDetails } = useSWR(
-    workspaceSlug && projectId ? PROJECT_DETAILS(projectId as string) : null,
-    workspaceSlug && projectId ? () => projectService.getProject(workspaceSlug as string, projectId as string) : null
-  );
+  const {
+    archivePage: archivePageAction,
+    restorePage: restorePageAction,
+    createPage: createPageAction,
+    projectPageMap,
+    projectArchivedPageMap,
+    fetchProjectPages,
+    fetchArchivedProjectPages,
+  } = useProjectPages();
 
-  const { data: pageDetails, error } = useSWR(
-    workspaceSlug && projectId && pageId ? PAGE_DETAILS(pageId as string) : null,
-    workspaceSlug && projectId
-      ? () => pageService.getPageDetails(workspaceSlug as string, projectId as string, pageId as string)
+  useSWR(
+    workspaceSlug && projectId ? `ALL_PAGES_LIST_${projectId}` : null,
+    workspaceSlug && projectId && !projectPageMap[projectId as string] && !projectArchivedPageMap[projectId as string]
+      ? () => fetchProjectPages(workspaceSlug.toString(), projectId.toString())
+      : null
+  );
+  // fetching archived pages from API
+  useSWR(
+    workspaceSlug && projectId ? `ALL_ARCHIVED_PAGES_LIST_${projectId}` : null,
+    workspaceSlug && projectId && !projectArchivedPageMap[projectId as string] && !projectPageMap[projectId as string]
+      ? () => fetchArchivedProjectPages(workspaceSlug.toString(), projectId.toString())
       : null
   );
 
-  const { data: pageBlocks } = useSWR(
-    workspaceSlug && projectId && pageId ? PAGE_BLOCKS_LIST(pageId as string) : null,
-    workspaceSlug && projectId
-      ? () => pageService.listPageBlocks(workspaceSlug as string, projectId as string, pageId as string)
-      : null
+  const pageStore = usePage(pageId as string);
+
+  useEffect(
+    () => () => {
+      if (pageStore) {
+        pageStore.cleanup();
+      }
+    },
+    [pageStore]
   );
 
-  const { data: labels } = useSWR<IIssueLabels[]>(
-    workspaceSlug && projectId ? PROJECT_ISSUE_LABELS(projectId as string) : null,
-    workspaceSlug && projectId
-      ? () => issueLabelService.getProjectIssueLabels(workspaceSlug as string, projectId as string)
-      : null
-  );
+  if (!pageStore) {
+    return (
+      <div className="grid h-full w-full place-items-center">
+        <Spinner />
+      </div>
+    );
+  }
 
-  const { data: memberDetails } = useSWR(
-    workspaceSlug && projectId ? USER_PROJECT_VIEW(projectId.toString()) : null,
-    workspaceSlug && projectId
-      ? () => projectService.projectMemberMe(workspaceSlug.toString(), projectId.toString())
-      : null
-  );
+  // We need to get the values of title and description from the page store but we don't have to subscribe to those values
+  const pageTitle = pageStore?.name;
+  const pageDescription = pageStore?.description_html;
+  const {
+    lockPage: lockPageAction,
+    unlockPage: unlockPageAction,
+    updateName: updateNameAction,
+    updateDescription: updateDescriptionAction,
+    id: pageIdMobx,
+    isSubmitting,
+    setIsSubmitting,
+    owned_by,
+    is_locked,
+    archived_at,
+    created_at,
+    created_by,
+    updated_at,
+    updated_by,
+  } = pageStore;
 
   const updatePage = async (formData: IPage) => {
     if (!workspaceSlug || !projectId || !pageId) return;
-
-    if (!formData.name || formData.name.length === 0 || formData.name === "") return;
-
-    await pageService
-      .patchPage(workspaceSlug as string, projectId as string, pageId as string, formData, user)
-      .then(() => {
-        mutate<IPage>(
-          PAGE_DETAILS(pageId as string),
-          (prevData) => ({
-            ...prevData,
-            ...formData,
-          }),
-          false
-        );
-      });
+    await updateDescriptionAction(formData.description_html);
   };
 
-  const partialUpdatePage = async (formData: Partial<IPage>) => {
+  const handleAiAssistance = async (response: string) => {
     if (!workspaceSlug || !projectId || !pageId) return;
 
-    mutate<IPage>(
-      PAGE_DETAILS(pageId as string),
-      (prevData) => ({
-        ...(prevData as IPage),
-        ...formData,
-        labels: formData.labels_list ? formData.labels_list : (prevData as IPage).labels,
-      }),
-      false
-    );
-
-    await pageService
-      .patchPage(workspaceSlug as string, projectId as string, pageId as string, formData, user)
-      .then(() => {
-        mutate(PAGE_DETAILS(pageId as string));
-      });
+    const newDescription = `${watch("description_html")}<p>${response}</p>`;
+    setValue("description_html", newDescription);
+    editorRef.current?.setEditorValue(newDescription);
+    updateDescriptionAction(newDescription);
   };
 
-  const handleAddToFavorites = () => {
-    if (!workspaceSlug || !projectId || !pageId) return;
-
-    mutate<IPage>(
-      PAGE_DETAILS(pageId as string),
-      (prevData) => ({
-        ...(prevData as IPage),
-        is_favorite: true,
-      }),
-      false
-    ).then(() => {
-      setToastAlert({
-        type: "success",
-        title: "Success",
-        message: "Added to favorites",
-      });
-    });
-
-    pageService.addPageToFavorites(workspaceSlug as string, projectId as string, {
-      page: pageId as string,
+  const actionCompleteAlert = ({
+    title,
+    message,
+    type,
+  }: {
+    title: string;
+    message: string;
+    type: "success" | "error" | "warning" | "info";
+  }) => {
+    setToastAlert({
+      title,
+      message,
+      type,
     });
   };
 
-  const handleRemoveFromFavorites = () => {
+  const updatePageTitle = (title: string) => {
     if (!workspaceSlug || !projectId || !pageId) return;
-
-    mutate<IPage>(
-      PAGE_DETAILS(pageId as string),
-      (prevData) => ({
-        ...(prevData as IPage),
-        is_favorite: false,
-      }),
-      false
-    ).then(() => {
-      setToastAlert({
-        type: "success",
-        title: "Success",
-        message: "Removed from favorites",
-      });
-    });
-
-    pageService.removePageFromFavorites(workspaceSlug as string, projectId as string, pageId as string);
+    updateNameAction(title);
   };
 
-  const handleOnDragEnd = (result: DropResult) => {
-    if (!result.destination || !workspaceSlug || !projectId || !pageId || !pageBlocks) return;
+  const createPage = async (payload: Partial<IPage>) => {
+    if (!workspaceSlug || !projectId) return;
+    await createPageAction(workspaceSlug as string, projectId as string, payload);
+  };
 
-    const { source, destination } = result;
+  // ================ Page Menu Actions ==================
+  const duplicate_page = async () => {
+    const currentPageValues = getValues();
 
-    let newSortOrder = pageBlocks.find((p) => p.id === result.draggableId)?.sort_order ?? 65535;
-
-    if (destination.index === 0) newSortOrder = pageBlocks[0].sort_order - 10000;
-    else if (destination.index === pageBlocks.length - 1)
-      newSortOrder = pageBlocks[pageBlocks.length - 1].sort_order + 10000;
-    else {
-      if (destination.index > source.index)
-        newSortOrder = (pageBlocks[destination.index].sort_order + pageBlocks[destination.index + 1].sort_order) / 2;
-      else if (destination.index < source.index)
-        newSortOrder = (pageBlocks[destination.index - 1].sort_order + pageBlocks[destination.index].sort_order) / 2;
+    if (!currentPageValues?.description_html) {
+      // TODO: We need to get latest data the above variable will give us stale data
+      currentPageValues.description_html = pageDescription as string;
     }
 
-    const newBlocksList = pageBlocks.map((p) => ({
-      ...p,
-      sort_order: p.id === result.draggableId ? newSortOrder : p.sort_order,
-    }));
-    mutate<IPageBlock[]>(
-      PAGE_BLOCKS_LIST(pageId as string),
-      orderArrayBy(newBlocksList, "sort_order", "ascending"),
-      false
-    );
-
-    pageService.patchPageBlock(
-      workspaceSlug as string,
-      projectId as string,
-      pageId as string,
-      result.draggableId,
-      {
-        sort_order: newSortOrder,
-      },
-      user
-    );
-  };
-
-  const handleCopyText = () => {
-    const originURL = typeof window !== "undefined" && window.location.origin ? window.location.origin : "";
-
-    copyTextToClipboard(`${originURL}/${workspaceSlug}/projects/${projectId}/pages/${pageId}`).then(() => {
-      setToastAlert({
-        type: "success",
-        title: "Link Copied!",
-        message: "Page link copied to clipboard.",
-      });
-    });
-  };
-
-  const handleShowBlockToggle = async () => {
-    if (!workspaceSlug || !projectId) return;
-
-    const payload: Partial<IProjectMember> = {
-      preferences: {
-        pages: {
-          block_display: !showBlock,
-        },
-      },
+    const formData: Partial<IPage> = {
+      name: "Copy of " + pageTitle,
+      description_html: currentPageValues.description_html,
     };
 
-    mutate<IProjectMember>(
-      (workspaceSlug as string) && (projectId as string) ? USER_PROJECT_VIEW(projectId as string) : null,
-      (prevData) => {
-        if (!prevData) return prevData;
-
-        return {
-          ...prevData,
-          ...payload,
-        };
-      },
-      false
-    );
-
-    await projectService.setProjectView(workspaceSlug as string, projectId as string, payload).catch(() => {
-      setToastAlert({
+    try {
+      await createPage(formData);
+    } catch (error) {
+      actionCompleteAlert({
+        title: `Page could not be duplicated`,
+        message: `Sorry, page could not be duplicated, please try again later`,
         type: "error",
-        title: "Error!",
-        message: "Something went wrong. Please try again.",
       });
-    });
+    }
   };
 
-  const options = labels?.map((label) => ({
-    value: label.id,
-    query: label.name,
-    content: (
-      <div className="flex items-center gap-2">
-        <span
-          className="h-2 w-2 flex-shrink-0 rounded-full"
-          style={{
-            backgroundColor: label.color && label.color !== "" ? label.color : "#000000",
-          }}
-        />
-        {label.name}
-      </div>
-    ),
-  }));
+  const archivePage = async () => {
+    if (!workspaceSlug || !projectId || !pageId) return;
+    try {
+      await archivePageAction(workspaceSlug as string, projectId as string, pageId as string);
+    } catch (error) {
+      actionCompleteAlert({
+        title: `Page could not be archived`,
+        message: `Sorry, page could not be archived, please try again later`,
+        type: "error",
+      });
+    }
+  };
 
-  useEffect(() => {
-    if (!pageDetails) return;
+  const unArchivePage = async () => {
+    if (!workspaceSlug || !projectId || !pageId) return;
+    try {
+      await restorePageAction(workspaceSlug as string, projectId as string, pageId as string);
+    } catch (error) {
+      actionCompleteAlert({
+        title: `Page could not be restored`,
+        message: `Sorry, page could not be restored, please try again later`,
+        type: "error",
+      });
+    }
+  };
 
-    reset({
-      ...pageDetails,
-    });
-  }, [reset, pageDetails]);
+  const lockPage = async () => {
+    if (!workspaceSlug || !projectId || !pageId) return;
+    try {
+      await lockPageAction();
+    } catch (error) {
+      actionCompleteAlert({
+        title: `Page could not be locked`,
+        message: `Sorry, page could not be locked, please try again later`,
+        type: "error",
+      });
+    }
+  };
 
-  useEffect(() => {
-    if (!memberDetails) return;
-    setShowBlock(memberDetails.preferences.pages.block_display);
-  }, [memberDetails]);
+  const unlockPage = async () => {
+    if (!workspaceSlug || !projectId || !pageId) return;
+    try {
+      await unlockPageAction();
+    } catch (error) {
+      actionCompleteAlert({
+        title: `Page could not be unlocked`,
+        message: `Sorry, page could not be unlocked, please try again later`,
+        type: "error",
+      });
+    }
+  };
 
-  return (
-    <ProjectAuthorizationWrapper
-      breadcrumbs={
-        <Breadcrumbs>
-          <BreadcrumbItem title="Projects" link={`/${workspaceSlug}/projects`} />
-          <BreadcrumbItem title={`${truncateText(projectDetails?.name ?? "Project", 32)} Pages`} />
-        </Breadcrumbs>
-      }
-    >
-      {error ? (
-        <EmptyState
-          image={emptyPage}
-          title="Page does not exist"
-          description="The page you are looking for does not exist or has been deleted."
-          primaryButton={{
-            text: "View other pages",
-            onClick: () => router.push(`/${workspaceSlug}/projects/${projectId}/pages`),
-          }}
-        />
-      ) : pageDetails ? (
-        <div className="flex h-full flex-col justify-between space-y-4 overflow-hidden p-4">
-          <div className="h-full w-full overflow-y-auto">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex w-full flex-col gap-2">
-                <div className="flex w-full items-center gap-2">
-                  <button
-                    type="button"
-                    className="flex items-center gap-2 text-sm text-custom-text-200"
-                    onClick={() => router.back()}
-                  >
-                    <ArrowLeftIcon className="h-4 w-4" />
-                  </button>
+  const isPageReadOnly =
+    is_locked ||
+    archived_at ||
+    (currentProjectRole && [EUserProjectRoles.VIEWER, EUserProjectRoles.GUEST].includes(currentProjectRole));
 
-                  <Controller
-                    name="name"
-                    control={control}
-                    render={({ field: { value, onChange } }) => (
-                      <TextArea
-                        id="name"
-                        name="name"
-                        value={watch("name")}
-                        placeholder="Page Title"
-                        onBlur={handleSubmit(updatePage)}
-                        onChange={(e) => setValue("name", e.target.value)}
-                        required={true}
-                        className="min-h-10 block w-full resize-none overflow-hidden rounded border-none bg-transparent !px-3 !py-2 text-xl font-semibold outline-none ring-0"
-                        role="textbox"
-                      />
-                    )}
-                  />
-                </div>
+  const isCurrentUserOwner = owned_by === currentUser?.id;
 
-                <div className="flex w-full flex-wrap gap-1">
-                  {pageDetails.labels.length > 0 && (
-                    <>
-                      {pageDetails.labels.map((labelId) => {
-                        const label = labels?.find((label) => label.id === labelId);
+  const userCanDuplicate =
+    currentProjectRole && [EUserProjectRoles.ADMIN, EUserProjectRoles.MEMBER].includes(currentProjectRole);
+  const userCanArchive = isCurrentUserOwner || currentProjectRole === EUserProjectRoles.ADMIN;
+  const userCanLock =
+    currentProjectRole && [EUserProjectRoles.ADMIN, EUserProjectRoles.MEMBER].includes(currentProjectRole);
 
-                        if (!label) return;
-
-                        return (
-                          <div
-                            key={label.id}
-                            className="group flex cursor-pointer items-center gap-1 rounded-2xl border border-custom-border-200 px-2 py-0.5 text-xs hover:border-red-500 hover:bg-red-50"
-                            onClick={() => {
-                              const updatedLabels = pageDetails.labels.filter((l) => l !== labelId);
-                              partialUpdatePage({ labels_list: updatedLabels });
-                            }}
-                            style={{
-                              backgroundColor: `${label?.color && label.color !== "" ? label.color : "#000000"}20`,
-                            }}
-                          >
-                            <span
-                              className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
-                              style={{
-                                backgroundColor: label?.color && label.color !== "" ? label.color : "#000000",
-                              }}
-                            />
-                            {label.name}
-                            <XMarkIcon className="h-2.5 w-2.5 group-hover:text-red-500" />
-                          </div>
-                        );
-                      })}
-                    </>
-                  )}
-                  <CustomSearchSelect
-                    customButton={
-                      <div className="flex items-center gap-1 rounded-sm bg-custom-background-80 p-1.5 text-xs">
-                        <PlusIcon className="h-3.5 w-3.5" />
-                        {pageDetails.labels.length <= 0 && <span>Add Label</span>}
-                      </div>
-                    }
-                    value={pageDetails.labels}
-                    footerOption={
-                      <button
-                        type="button"
-                        className="flex w-full select-none items-center rounded py-2 px-1 hover:bg-custom-background-80"
-                        onClick={() => {
-                          setLabelModal(true);
-                        }}
-                      >
-                        <span className="flex items-center justify-start gap-1 text-custom-text-200">
-                          <PlusIcon className="h-4 w-4" aria-hidden="true" />
-                          <span>Create New Label</span>
-                        </span>
-                      </button>
-                    }
-                    onChange={(val: string[]) => partialUpdatePage({ labels_list: val })}
-                    options={options}
-                    multiple
-                    noChevron
-                  />
-                </div>
-              </div>
-              <div className="flex items-center">
-                <div className="flex items-center gap-6 text-custom-text-200">
-                  <Tooltip
-                    tooltipContent={`Last updated at ${render24HourFormatTime(
-                      pageDetails.updated_at
-                    )} on ${renderShortDate(pageDetails.updated_at)}`}
-                  >
-                    <p className="text-sm">{render24HourFormatTime(pageDetails.updated_at)}</p>
-                  </Tooltip>
-                  <Popover className="relative">
-                    {({ open }) => (
-                      <>
-                        <Popover.Button
-                          className={`group flex items-center gap-2 rounded-md border border-custom-sidebar-border-200 bg-transparent px-2 py-1 text-xs hover:bg-custom-sidebar-background-90 hover:text-custom-sidebar-text-100 focus:outline-none duration-300 ${
-                            open
-                              ? "bg-custom-sidebar-background-90 text-custom-sidebar-text-100"
-                              : "text-custom-sidebar-text-200"
-                          }`}
-                        >
-                          Display
-                          <ChevronDownIcon className="h-3 w-3" aria-hidden="true" />
-                        </Popover.Button>
-
-                        <Transition
-                          as={React.Fragment}
-                          enter="transition ease-out duration-200"
-                          enterFrom="opacity-0 translate-y-1"
-                          enterTo="opacity-100 translate-y-0"
-                          leave="transition ease-in duration-150"
-                          leaveFrom="opacity-100 translate-y-0"
-                          leaveTo="opacity-0 translate-y-1"
-                        >
-                          <Popover.Panel className="absolute right-0 z-30 mt-1 w-screen max-w-xs transform rounded-lg border border-custom-border-200 bg-custom-background-90 p-3 shadow-lg">
-                            <div className="relative divide-y-2 divide-custom-border-200">
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-custom-text-200">Show full block content</span>
-                                <ToggleSwitch
-                                  value={showBlock}
-                                  onChange={(value) => {
-                                    setShowBlock(value);
-                                    handleShowBlockToggle();
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          </Popover.Panel>
-                        </Transition>
-                      </>
-                    )}
-                  </Popover>
-                  <button className="flex items-center gap-2" onClick={handleCopyText}>
-                    <LinkIcon className="h-4 w-4" />
-                  </button>
-                  <div className="flex-shrink-0">
-                    <Popover className="relative grid place-items-center">
-                      {({ open }) => (
-                        <>
-                          <Popover.Button
-                            type="button"
-                            className={`group inline-flex items-center outline-none ${
-                              open ? "text-custom-text-100" : "text-custom-text-200"
-                            }`}
-                          >
-                            {watch("color") && watch("color") !== "" ? (
-                              <span
-                                className="h-4 w-4 rounded"
-                                style={{
-                                  backgroundColor: watch("color") ?? "black",
-                                }}
-                              />
-                            ) : (
-                              <ColorPalletteIcon height={16} width={16} />
-                            )}
-                          </Popover.Button>
-
-                          <Transition
-                            as={React.Fragment}
-                            enter="transition ease-out duration-200"
-                            enterFrom="opacity-0 translate-y-1"
-                            enterTo="opacity-100 translate-y-0"
-                            leave="transition ease-in duration-150"
-                            leaveFrom="opacity-100 translate-y-0"
-                            leaveTo="opacity-0 translate-y-1"
-                          >
-                            <Popover.Panel className="absolute top-full right-0 z-20 mt-1 max-w-xs px-2 sm:px-0">
-                              <TwitterPicker
-                                color={pageDetails.color}
-                                styles={{
-                                  default: {
-                                    card: {
-                                      backgroundColor: `rgba(var(--color-background-80))`,
-                                    },
-                                    triangle: {
-                                      position: "absolute",
-                                      borderColor:
-                                        "transparent transparent rgba(var(--color-background-80)) transparent",
-                                    },
-                                    input: {
-                                      border: "none",
-                                      height: "1.85rem",
-                                      fontSize: "0.875rem",
-                                      paddingLeft: "0.25rem",
-                                      color: `rgba(var(--color-text-200))`,
-                                      boxShadow: "none",
-                                      backgroundColor: `rgba(var(--color-background-90))`,
-                                      borderLeft: `1px solid rgba(var(--color-background-80))`,
-                                    },
-                                    hash: {
-                                      color: `rgba(var(--color-text-200))`,
-                                      boxShadow: "none",
-                                      backgroundColor: `rgba(var(--color-background-90))`,
-                                    },
-                                  },
-                                }}
-                                onChange={(val) => partialUpdatePage({ color: val.hex })}
-                              />
-                            </Popover.Panel>
-                          </Transition>
-                        </>
-                      )}
-                    </Popover>
-                  </div>
-                  {pageDetails.created_by === user?.id && (
-                    <Tooltip
-                      tooltipContent={`${
-                        pageDetails.access
-                          ? "This page is only visible to you."
-                          : "This page can be viewed by anyone in the project."
-                      }`}
-                    >
-                      {pageDetails.access ? (
-                        <button onClick={() => partialUpdatePage({ access: 0 })} className="z-10">
-                          <LockClosedIcon className="h-4 w-4" />
-                        </button>
-                      ) : (
-                        <button onClick={() => partialUpdatePage({ access: 1 })} type="button" className="z-10">
-                          <LockOpenIcon className="h-4 w-4" />
-                        </button>
-                      )}
-                    </Tooltip>
-                  )}
-                  {pageDetails.is_favorite ? (
-                    <button onClick={handleRemoveFromFavorites} className="z-10">
-                      <StarIcon className="h-4 w-4 text-orange-400" fill="#f6ad55" />
-                    </button>
-                  ) : (
-                    <button onClick={handleAddToFavorites} type="button" className="z-10">
-                      <StarIcon className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-5 h-full w-full">
-              {pageBlocks ? (
-                <>
-                  <DragDropContext onDragEnd={handleOnDragEnd}>
-                    {pageBlocks.length !== 0 && (
-                      <StrictModeDroppable droppableId="blocks-list">
-                        {(provided) => (
-                          <div
-                            className="flex w-full flex-col gap-2"
-                            ref={provided.innerRef}
-                            {...provided.droppableProps}
-                          >
-                            <>
-                              {pageBlocks.map((block, index) => (
-                                <SinglePageBlock
-                                  key={block.id}
-                                  block={block}
-                                  projectDetails={projectDetails}
-                                  showBlockDetails={showBlock}
-                                  index={index}
-                                  user={user}
-                                />
-                              ))}
-                              {provided.placeholder}
-                            </>
-                          </div>
-                        )}
-                      </StrictModeDroppable>
-                    )}
-                  </DragDropContext>
-                  {createBlockForm && (
-                    <div className="mt-4" ref={scrollToRef}>
-                      <CreateUpdateBlockInline handleClose={() => setCreateBlockForm(false)} focus="name" user={user} />
-                    </div>
-                  )}
-                  {labelModal && typeof projectId === "string" && (
-                    <CreateLabelModal
-                      isOpen={labelModal}
-                      handleClose={() => setLabelModal(false)}
-                      projectId={projectId}
-                      user={user}
-                      onSuccess={(response) => {
-                        partialUpdatePage({
-                          labels_list: [...(pageDetails.labels ?? []), response.id],
-                        });
-                      }}
-                    />
-                  )}
-                </>
-              ) : (
-                <Loader>
-                  <Loader.Item height="150px" />
-                  <Loader.Item height="150px" />
-                </Loader>
+  return pageIdMobx ? (
+    <div className="flex h-full flex-col justify-between">
+      <div className="h-full w-full overflow-hidden">
+        {isPageReadOnly ? (
+          <DocumentReadOnlyEditorWithRef
+            onActionCompleteHandler={actionCompleteAlert}
+            ref={editorRef}
+            value={pageDescription}
+            customClassName={"tracking-tight w-full px-0"}
+            borderOnFocus={false}
+            noBorder
+            documentDetails={{
+              title: pageTitle,
+              created_by: created_by,
+              created_on: created_at,
+              last_updated_at: updated_at,
+              last_updated_by: updated_by,
+            }}
+            pageLockConfig={userCanLock && !archived_at ? { action: unlockPage, is_locked: is_locked } : undefined}
+            pageDuplicationConfig={userCanDuplicate && !archived_at ? { action: duplicate_page } : undefined}
+            pageArchiveConfig={
+              userCanArchive
+                ? {
+                    action: archived_at ? unArchivePage : archivePage,
+                    is_archived: archived_at ? true : false,
+                    archived_at: archived_at ? new Date(archived_at) : undefined,
+                  }
+                : undefined
+            }
+          />
+        ) : (
+          <div className="relative h-full w-full overflow-hidden">
+            <Controller
+              name="description_html"
+              control={control}
+              render={({ field: { onChange } }) => (
+                <DocumentEditorWithRef
+                  isSubmitting={isSubmitting}
+                  documentDetails={{
+                    title: pageTitle,
+                    created_by: created_by,
+                    created_on: created_at,
+                    last_updated_at: updated_at,
+                    last_updated_by: updated_by,
+                  }}
+                  uploadFile={fileService.getUploadFileFunction(workspaceSlug as string)}
+                  deleteFile={fileService.getDeleteImageFunction(workspaceId)}
+                  restoreFile={fileService.getRestoreImageFunction(workspaceId)}
+                  value={pageDescription}
+                  setShouldShowAlert={setShowAlert}
+                  cancelUploadImage={fileService.cancelUpload}
+                  ref={editorRef}
+                  debouncedUpdatesEnabled={false}
+                  setIsSubmitting={setIsSubmitting}
+                  updatePageTitle={updatePageTitle}
+                  onActionCompleteHandler={actionCompleteAlert}
+                  customClassName="tracking-tight self-center h-full w-full right-[0.675rem]"
+                  onChange={(_description_json: Object, description_html: string) => {
+                    setShowAlert(true);
+                    onChange(description_html);
+                    handleSubmit(updatePage)();
+                  }}
+                  duplicationConfig={userCanDuplicate ? { action: duplicate_page } : undefined}
+                  pageArchiveConfig={
+                    userCanArchive
+                      ? {
+                          is_archived: archived_at ? true : false,
+                          action: archived_at ? unArchivePage : archivePage,
+                        }
+                      : undefined
+                  }
+                  pageLockConfig={userCanLock ? { is_locked: false, action: lockPage } : undefined}
+                />
               )}
-            </div>
+            />
+            {projectId && envConfig?.has_openai_configured && (
+              <div className="absolute right-[68px] top-2.5">
+                <GptAssistantPopover
+                  isOpen={gptModalOpen}
+                  projectId={projectId.toString()}
+                  handleClose={() => {
+                    setGptModal((prevData) => !prevData);
+                    // this is done so that the title do not reset after gpt popover closed
+                    reset(getValues());
+                  }}
+                  onResponse={(response) => {
+                    handleAiAssistance(response);
+                  }}
+                  placement="top-end"
+                  button={
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 rounded px-1.5 py-1 text-xs hover:bg-custom-background-90"
+                      onClick={() => setGptModal((prevData) => !prevData)}
+                    >
+                      <Sparkle className="h-4 w-4" />
+                      AI
+                    </button>
+                  }
+                  className="!min-w-[38rem]"
+                />
+              </div>
+            )}
           </div>
-          <div>
-            <CreateBlock user={user} />
-          </div>
-        </div>
-      ) : (
-        <Loader className="p-8">
-          <Loader.Item height="200px" />
-        </Loader>
-      )}
-    </ProjectAuthorizationWrapper>
+        )}
+        <IssuePeekOverview />
+      </div>
+    </div>
+  ) : (
+    <div className="grid h-full w-full place-items-center">
+      <Spinner />
+    </div>
+  );
+});
+
+PageDetailsPage.getLayout = function getLayout(page: ReactElement) {
+  return (
+    <AppLayout header={<PageDetailsHeader />} withProjectWrapper>
+      {page}
+    </AppLayout>
   );
 };
 
-export default SinglePage;
+export default PageDetailsPage;

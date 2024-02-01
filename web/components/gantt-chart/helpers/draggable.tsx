@@ -1,7 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-
-// icons
-import { Icon } from "components/ui";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 // hooks
 import { useChart } from "../hooks";
 // types
@@ -9,30 +7,24 @@ import { IGanttBlock } from "../types";
 
 type Props = {
   block: IGanttBlock;
-  BlockRender: React.FC<any>;
+  blockToRender: (data: any) => React.ReactNode;
   handleBlock: (totalBlockShifts: number, dragDirection: "left" | "right" | "move") => void;
   enableBlockLeftResize: boolean;
   enableBlockRightResize: boolean;
   enableBlockMove: boolean;
 };
 
-export const ChartDraggable: React.FC<Props> = ({
-  block,
-  BlockRender,
-  handleBlock,
-  enableBlockLeftResize,
-  enableBlockRightResize,
-  enableBlockMove,
-}) => {
+export const ChartDraggable: React.FC<Props> = (props) => {
+  const { block, blockToRender, handleBlock, enableBlockLeftResize, enableBlockRightResize, enableBlockMove } = props;
+  // states
   const [isLeftResizing, setIsLeftResizing] = useState(false);
   const [isRightResizing, setIsRightResizing] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
   const [posFromLeft, setPosFromLeft] = useState<number | null>(null);
-
+  // refs
   const resizableRef = useRef<HTMLDivElement>(null);
-
+  // chart hook
   const { currentViewData, scrollLeft } = useChart();
-
   // check if cursor reaches either end while resizing/dragging
   const checkScrollEnd = (e: MouseEvent): number => {
     const SCROLL_THRESHOLD = 70;
@@ -48,10 +40,7 @@ export const ChartDraggable: React.FC<Props> = ({
 
     const posFromLeft = e.clientX;
     // manually scroll to left if reached the left end while dragging
-    if (
-      posFromLeft - (ganttContainer.getBoundingClientRect().left + ganttSidebar.clientWidth) <=
-      SCROLL_THRESHOLD
-    ) {
+    if (posFromLeft - (ganttContainer.getBoundingClientRect().left + ganttSidebar.clientWidth) <= SCROLL_THRESHOLD) {
       if (e.movementX > 0) return 0;
 
       delWidth = -5;
@@ -71,7 +60,6 @@ export const ChartDraggable: React.FC<Props> = ({
 
     return delWidth;
   };
-
   // handle block resize from the left end
   const handleBlockLeftResize = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
     if (!currentViewData || !resizableRef.current || !block.position) return;
@@ -82,8 +70,7 @@ export const ChartDraggable: React.FC<Props> = ({
 
     const columnWidth = currentViewData.data.width;
 
-    const blockInitialWidth =
-      resizableDiv.clientWidth ?? parseInt(block.position.width.toString(), 10);
+    const blockInitialWidth = resizableDiv.clientWidth ?? parseInt(block.position.width.toString(), 10);
 
     let initialWidth = resizableDiv.clientWidth ?? parseInt(block.position.width.toString(), 10);
     let initialMarginLeft = parseInt(resizableDiv.style.marginLeft);
@@ -116,9 +103,7 @@ export const ChartDraggable: React.FC<Props> = ({
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
 
-      const totalBlockShifts = Math.ceil(
-        (resizableDiv.clientWidth - blockInitialWidth) / columnWidth
-      );
+      const totalBlockShifts = Math.ceil((resizableDiv.clientWidth - blockInitialWidth) / columnWidth);
 
       handleBlock(totalBlockShifts, "left");
     };
@@ -126,7 +111,6 @@ export const ChartDraggable: React.FC<Props> = ({
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
   };
-
   // handle block resize from the right end
   const handleBlockRightResize = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
     if (!currentViewData || !resizableRef.current || !block.position) return;
@@ -137,8 +121,7 @@ export const ChartDraggable: React.FC<Props> = ({
 
     const columnWidth = currentViewData.data.width;
 
-    const blockInitialWidth =
-      resizableDiv.clientWidth ?? parseInt(block.position.width.toString(), 10);
+    const blockInitialWidth = resizableDiv.clientWidth ?? parseInt(block.position.width.toString(), 10);
 
     let initialWidth = resizableDiv.clientWidth ?? parseInt(block.position.width.toString(), 10);
 
@@ -162,9 +145,7 @@ export const ChartDraggable: React.FC<Props> = ({
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
 
-      const totalBlockShifts = Math.ceil(
-        (resizableDiv.clientWidth - blockInitialWidth) / columnWidth
-      );
+      const totalBlockShifts = Math.ceil((resizableDiv.clientWidth - blockInitialWidth) / columnWidth);
 
       handleBlock(totalBlockShifts, "right");
     };
@@ -172,7 +153,6 @@ export const ChartDraggable: React.FC<Props> = ({
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
   };
-
   // handle block x-axis move
   const handleBlockMove = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
     if (!enableBlockMove || !currentViewData || !resizableRef.current || !block.position) return;
@@ -219,7 +199,6 @@ export const ChartDraggable: React.FC<Props> = ({
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
   };
-
   // scroll to a hidden block
   const handleScrollToBlock = () => {
     const scrollContainer = document.querySelector("#scroll-container") as HTMLElement;
@@ -229,7 +208,6 @@ export const ChartDraggable: React.FC<Props> = ({
     // update container's scroll position to the block's position
     scrollContainer.scrollLeft = block.position.marginLeft - 4;
   };
-
   // update block position from viewport's left end on scroll
   useEffect(() => {
     const block = resizableRef.current;
@@ -238,7 +216,6 @@ export const ChartDraggable: React.FC<Props> = ({
 
     setPosFromLeft(block.getBoundingClientRect().left);
   }, [scrollLeft]);
-
   // check if block is hidden on either side
   const isBlockHiddenOnLeft =
     block.position?.marginLeft &&
@@ -251,25 +228,25 @@ export const ChartDraggable: React.FC<Props> = ({
       {/* move to left side hidden block button */}
       {isBlockHiddenOnLeft && (
         <div
-          className="fixed ml-1 mt-1.5 z-[1] h-8 w-8 grid place-items-center border border-custom-border-300 rounded cursor-pointer bg-custom-background-80 text-custom-text-200 hover:text-custom-text-100"
+          className="fixed z-[1] ml-1 mt-1.5 grid h-8 w-8 cursor-pointer place-items-center rounded border border-custom-border-300 bg-custom-background-80 text-custom-text-200 hover:text-custom-text-100"
           onClick={handleScrollToBlock}
         >
-          <Icon iconName="arrow_back" />
+          <ArrowLeft className="h-3.5 w-3.5" />
         </div>
       )}
       {/* move to right side hidden block button */}
       {isBlockHiddenOnRight && (
         <div
-          className="fixed right-1 mt-1.5 z-[1] h-8 w-8 grid place-items-center border border-custom-border-300 rounded cursor-pointer bg-custom-background-80 text-custom-text-200 hover:text-custom-text-100"
+          className="fixed right-1 z-[1] mt-1.5 grid h-8 w-8 cursor-pointer place-items-center rounded border border-custom-border-300 bg-custom-background-80 text-custom-text-200 hover:text-custom-text-100"
           onClick={handleScrollToBlock}
         >
-          <Icon iconName="arrow_forward" />
+          <ArrowRight className="h-3.5 w-3.5" />
         </div>
       )}
       <div
         id={`block-${block.id}`}
         ref={resizableRef}
-        className="relative group cursor-pointer font-medium h-full inline-flex items-center transition-all"
+        className="group relative inline-flex h-full cursor-pointer items-center font-medium transition-all"
         style={{
           marginLeft: `${block.position?.marginLeft}px`,
           width: `${block.position?.width}px`,
@@ -282,22 +259,20 @@ export const ChartDraggable: React.FC<Props> = ({
               onMouseDown={handleBlockLeftResize}
               onMouseEnter={() => setIsLeftResizing(true)}
               onMouseLeave={() => setIsLeftResizing(false)}
-              className="absolute top-1/2 -left-2.5 -translate-y-1/2 z-[3] w-6 h-full rounded-md cursor-col-resize"
+              className="absolute -left-2.5 top-1/2 z-[3] h-full w-6 -translate-y-1/2 cursor-col-resize rounded-md"
             />
             <div
-              className={`absolute top-1/2 -translate-y-1/2 w-1 h-7 rounded-sm bg-custom-background-100 transition-all duration-300 ${
+              className={`absolute top-1/2 h-7 w-1 -translate-y-1/2 rounded-sm bg-custom-background-100 transition-all duration-300 ${
                 isLeftResizing ? "-left-2.5" : "left-1"
               }`}
             />
           </>
         )}
         <div
-          className={`relative z-[2] rounded h-8 w-full flex items-center ${
-            isMoving ? "pointer-events-none" : ""
-          }`}
+          className={`relative z-[2] flex h-8 w-full items-center rounded ${isMoving ? "pointer-events-none" : ""}`}
           onMouseDown={handleBlockMove}
         >
-          <BlockRender data={block.data} />
+          {blockToRender(block.data)}
         </div>
         {/* right resize drag handle */}
         {enableBlockRightResize && (
@@ -306,10 +281,10 @@ export const ChartDraggable: React.FC<Props> = ({
               onMouseDown={handleBlockRightResize}
               onMouseEnter={() => setIsRightResizing(true)}
               onMouseLeave={() => setIsRightResizing(false)}
-              className="absolute top-1/2 -right-2.5 -translate-y-1/2 z-[2] w-6 h-full rounded-md cursor-col-resize"
+              className="absolute -right-2.5 top-1/2 z-[2] h-full w-6 -translate-y-1/2 cursor-col-resize rounded-md"
             />
             <div
-              className={`absolute top-1/2 -translate-y-1/2 w-1 h-7 rounded-sm bg-custom-background-100 transition-all duration-300 ${
+              className={`absolute top-1/2 h-7 w-1 -translate-y-1/2 rounded-sm bg-custom-background-100 transition-all duration-300 ${
                 isRightResizing ? "-right-2.5" : "right-1"
               }`}
             />

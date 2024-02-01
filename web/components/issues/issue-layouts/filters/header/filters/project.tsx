@@ -1,31 +1,38 @@
 import React, { useState } from "react";
-
+import { observer } from "mobx-react";
 // components
 import { FilterHeader, FilterOption } from "components/issues";
+// hooks
+import { useProject } from "hooks/store";
 // ui
 import { Loader } from "@plane/ui";
 // helpers
 import { renderEmoji } from "helpers/emoji.helper";
-// types
-import { IProject } from "types";
 
 type Props = {
   appliedFilters: string[] | null;
   handleUpdate: (val: string) => void;
-  itemsToRender: number;
-  projects: IProject[] | undefined;
   searchQuery: string;
-  viewButtons: React.ReactNode;
 };
 
-export const FilterProjects: React.FC<Props> = (props) => {
-  const { appliedFilters, handleUpdate, itemsToRender, projects, searchQuery, viewButtons } = props;
-
+export const FilterProjects: React.FC<Props> = observer((props) => {
+  const { appliedFilters, handleUpdate, searchQuery } = props;
+  // states
+  const [itemsToRender, setItemsToRender] = useState(5);
   const [previewEnabled, setPreviewEnabled] = useState(true);
-
+  // store
+  const { getProjectById, workspaceProjectIds } = useProject();
+  // derived values
+  const projects = workspaceProjectIds?.map((projectId) => getProjectById(projectId)!) ?? null;
   const appliedFiltersCount = appliedFilters?.length ?? 0;
-
   const filteredOptions = projects?.filter((project) => project.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  const handleViewToggle = () => {
+    if (!filteredOptions) return;
+
+    if (itemsToRender === filteredOptions.length) setItemsToRender(5);
+    else setItemsToRender(filteredOptions.length);
+  };
 
   return (
     <>
@@ -50,11 +57,11 @@ export const FilterProjects: React.FC<Props> = (props) => {
                           {renderEmoji(project.emoji)}
                         </span>
                       ) : project.icon_prop ? (
-                        <div className="grid place-items-center flex-shrink-0 -my-1">
+                        <div className="-my-1 grid flex-shrink-0 place-items-center">
                           {renderEmoji(project.icon_prop)}
                         </div>
                       ) : (
-                        <span className="grid mr-1 flex-shrink-0 place-items-center rounded bg-gray-700 uppercase text-white">
+                        <span className="mr-1 grid flex-shrink-0 place-items-center rounded bg-gray-700 uppercase text-white">
                           {project?.name.charAt(0)}
                         </span>
                       )
@@ -62,10 +69,18 @@ export const FilterProjects: React.FC<Props> = (props) => {
                     title={project.name}
                   />
                 ))}
-                {viewButtons}
+                {filteredOptions.length > 5 && (
+                  <button
+                    type="button"
+                    className="ml-8 text-xs font-medium text-custom-primary-100"
+                    onClick={handleViewToggle}
+                  >
+                    {itemsToRender === filteredOptions.length ? "View less" : "View all"}
+                  </button>
+                )}
               </>
             ) : (
-              <p className="text-xs text-custom-text-400 italic">No matches found</p>
+              <p className="text-xs italic text-custom-text-400">No matches found</p>
             )
           ) : (
             <Loader className="space-y-2">
@@ -78,4 +93,4 @@ export const FilterProjects: React.FC<Props> = (props) => {
       )}
     </>
   );
-};
+});

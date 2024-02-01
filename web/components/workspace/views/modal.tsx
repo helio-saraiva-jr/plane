@@ -2,15 +2,13 @@ import React from "react";
 import { useRouter } from "next/router";
 import { observer } from "mobx-react-lite";
 import { Dialog, Transition } from "@headlessui/react";
-
-// mobx store
-import { useMobxStore } from "lib/mobx/store-provider";
-// hooks
+// store hooks
+import { useGlobalView } from "hooks/store";
 import useToast from "hooks/use-toast";
 // components
 import { WorkspaceViewForm } from "components/workspace";
 // types
-import { IWorkspaceView } from "types/workspace-views";
+import { IWorkspaceView } from "@plane/types";
 
 type Props = {
   data?: IWorkspaceView;
@@ -21,30 +19,29 @@ type Props = {
 
 export const CreateUpdateWorkspaceViewModal: React.FC<Props> = observer((props) => {
   const { isOpen, onClose, data, preLoadedData } = props;
-
+  // router
   const router = useRouter();
   const { workspaceSlug } = router.query;
-
-  const { globalViews: globalViewsStore } = useMobxStore();
-
+  // store hooks
+  const { createGlobalView, updateGlobalView } = useGlobalView();
+  // toast alert
   const { setToastAlert } = useToast();
 
   const handleClose = () => {
     onClose();
   };
 
-  const createView = async (payload: Partial<IWorkspaceView>) => {
+  const handleCreateView = async (payload: Partial<IWorkspaceView>) => {
     if (!workspaceSlug) return;
 
     const payloadData: Partial<IWorkspaceView> = {
       ...payload,
-      query: {
-        ...payload.query_data?.filters,
+      filters: {
+        ...payload?.filters,
       },
     };
 
-    await globalViewsStore
-      .createGlobalView(workspaceSlug.toString(), payloadData)
+    await createGlobalView(workspaceSlug.toString(), payloadData)
       .then((res) => {
         setToastAlert({
           type: "success",
@@ -53,6 +50,7 @@ export const CreateUpdateWorkspaceViewModal: React.FC<Props> = observer((props) 
         });
 
         router.push(`/${workspaceSlug}/workspace-views/${res.id}`);
+        handleClose();
       })
       .catch(() =>
         setToastAlert({
@@ -63,25 +61,25 @@ export const CreateUpdateWorkspaceViewModal: React.FC<Props> = observer((props) 
       );
   };
 
-  const updateView = async (payload: Partial<IWorkspaceView>) => {
+  const handleUpdateView = async (payload: Partial<IWorkspaceView>) => {
     if (!workspaceSlug || !data) return;
 
     const payloadData: Partial<IWorkspaceView> = {
       ...payload,
       query: {
-        ...payload.query_data?.filters,
+        ...payload?.filters,
       },
     };
 
-    await globalViewsStore
-      .updateGlobalView(workspaceSlug.toString(), data.id, payloadData)
-      .then(() =>
+    await updateGlobalView(workspaceSlug.toString(), data.id, payloadData)
+      .then(() => {
         setToastAlert({
           type: "success",
           title: "Success!",
           message: "View updated successfully.",
-        })
-      )
+        });
+        handleClose();
+      })
       .catch(() =>
         setToastAlert({
           type: "error",
@@ -94,10 +92,8 @@ export const CreateUpdateWorkspaceViewModal: React.FC<Props> = observer((props) 
   const handleFormSubmit = async (formData: Partial<IWorkspaceView>) => {
     if (!workspaceSlug) return;
 
-    if (!data) await createView(formData);
-    else await updateView(formData);
-
-    handleClose();
+    if (!data) await handleCreateView(formData);
+    else await handleUpdateView(formData);
   };
 
   return (
@@ -112,7 +108,7 @@ export const CreateUpdateWorkspaceViewModal: React.FC<Props> = observer((props) 
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-custom-backdrop bg-opacity-50 transition-opacity" />
+          <div className="fixed inset-0 bg-custom-backdrop transition-opacity" />
         </Transition.Child>
 
         <div className="fixed inset-0 z-20 overflow-y-auto">
@@ -126,7 +122,7 @@ export const CreateUpdateWorkspaceViewModal: React.FC<Props> = observer((props) 
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative transform rounded-lg border border-custom-border-200 bg-custom-background-100 px-5 py-8 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
+              <Dialog.Panel className="relative transform rounded-lg bg-custom-background-100 px-5 py-8 text-left shadow-custom-shadow-md transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
                 <WorkspaceViewForm
                   handleFormSubmit={handleFormSubmit}
                   handleClose={handleClose}

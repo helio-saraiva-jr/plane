@@ -1,22 +1,23 @@
 import { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/router";
-import { mutate } from "swr";
-// services
-import { ProjectService } from "services/project";
+// hooks
+import { useProject, useUser } from "hooks/store";
 // ui
 import { Button } from "@plane/ui";
 // icons
-import { AssignmentClipboardIcon } from "components/icons";
+import { ClipboardList } from "lucide-react";
 // images
 import JoinProjectImg from "public/auth/project-not-authorized.svg";
-// fetch-keys
-import { USER_PROJECT_VIEW } from "constants/fetch-keys";
-
-const projectService = new ProjectService();
 
 export const JoinProject: React.FC = () => {
+  // states
   const [isJoiningProject, setIsJoiningProject] = useState(false);
+  // store hooks
+  const {
+    membership: { joinProject },
+  } = useUser();
+  const { fetchProjects } = useProject();
 
   const router = useRouter();
   const { workspaceSlug, projectId } = router.query;
@@ -25,16 +26,10 @@ export const JoinProject: React.FC = () => {
     if (!workspaceSlug || !projectId) return;
 
     setIsJoiningProject(true);
-    projectService
-      .joinProject(workspaceSlug as string, [projectId as string])
-      .then(async () => {
-        await mutate(USER_PROJECT_VIEW(projectId.toString()));
-        setIsJoiningProject(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setIsJoiningProject(false);
-      });
+
+    joinProject(workspaceSlug.toString(), [projectId.toString()])
+      .then(() => fetchProjects(workspaceSlug.toString()))
+      .finally(() => setIsJoiningProject(false));
   };
 
   return (
@@ -52,7 +47,7 @@ export const JoinProject: React.FC = () => {
       <div>
         <Button
           variant="primary"
-          prependIcon={<AssignmentClipboardIcon color="white" />}
+          prependIcon={<ClipboardList color="white" />}
           loading={isJoiningProject}
           onClick={handleJoin}
         >

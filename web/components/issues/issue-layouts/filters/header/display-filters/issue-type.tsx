@@ -4,7 +4,7 @@ import { observer } from "mobx-react-lite";
 // components
 import { FilterHeader, FilterOption } from "components/issues";
 // types
-import { TIssueTypeFilters } from "types";
+import { TIssueTypeFilters } from "@plane/types";
 // constants
 import { ISSUE_FILTER_OPTIONS } from "constants/issue";
 
@@ -18,6 +18,8 @@ export const FilterIssueType: React.FC<Props> = observer((props) => {
 
   const [previewEnabled, setPreviewEnabled] = React.useState(true);
 
+  const activeIssueType = selectedIssueType ?? null;
+
   return (
     <>
       <FilterHeader
@@ -30,7 +32,7 @@ export const FilterIssueType: React.FC<Props> = observer((props) => {
           {ISSUE_FILTER_OPTIONS.map((issueType) => (
             <FilterOption
               key={issueType?.key}
-              isChecked={selectedIssueType === issueType?.key ? true : false}
+              isChecked={activeIssueType === issueType?.key ? true : false}
               onClick={() => handleUpdate(issueType?.key)}
               title={issueType.title}
               multiple={false}

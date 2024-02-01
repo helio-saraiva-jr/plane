@@ -1,61 +1,51 @@
-import React, { useState, FC, useRef, useEffect } from "react";
+import { useState, FC, useRef, useEffect } from "react";
 import { useRouter } from "next/router";
-import useSWR from "swr";
-import { DragDropContext, Draggable, DropResult, Droppable } from "react-beautiful-dnd";
+import { DragDropContext, Draggable, DropResult, Droppable } from "@hello-pangea/dnd";
 import { Disclosure, Transition } from "@headlessui/react";
 import { observer } from "mobx-react-lite";
+import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 // hooks
+import { useApplication, useProject, useUser } from "hooks/store";
 import useToast from "hooks/use-toast";
-import useUserAuth from "hooks/use-user-auth";
 // components
 import { CreateProjectModal, ProjectSidebarListItem } from "components/project";
-
-// icons
-import { Icon } from "components/ui";
-import { PlusIcon } from "@heroicons/react/24/outline";
 // helpers
-import { copyTextToClipboard } from "helpers/string.helper";
-import { orderArrayBy } from "helpers/array.helper";
-// types
-import { IProject } from "types";
-// mobx store
-import { useMobxStore } from "lib/mobx/store-provider";
+import { copyUrlToClipboard } from "helpers/string.helper";
+// constants
+import { EUserWorkspaceRoles } from "constants/workspace";
 
 export const ProjectSidebarList: FC = observer(() => {
-  const { theme: themeStore, project: projectStore } = useMobxStore();
-  // router
-  const router = useRouter();
-  const { workspaceSlug } = router.query;
-  // swr
-  useSWR(
-    workspaceSlug ? "PROJECTS_LIST" : null,
-    workspaceSlug ? () => projectStore.fetchProjects(workspaceSlug?.toString()) : null
-  );
   // states
   const [isFavoriteProjectCreate, setIsFavoriteProjectCreate] = useState(false);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false); // scroll animation state
   // refs
   const containerRef = useRef<HTMLDivElement | null>(null);
-  // user
-  const { user } = useUserAuth();
+
+  const {
+    theme: { sidebarCollapsed },
+    commandPalette: { toggleCreateProjectModal },
+    eventTracker: { setTrackElement },
+  } = useApplication();
+  const {
+    membership: { currentWorkspaceRole },
+  } = useUser();
+  const {
+    joinedProjectIds: joinedProjects,
+    favoriteProjectIds: favoriteProjects,
+    orderProjectsWithSortOrder,
+    updateProjectView,
+  } = useProject();
+  // router
+  const router = useRouter();
+  const { workspaceSlug } = router.query;
   // toast
   const { setToastAlert } = useToast();
 
-  const joinedProjects = workspaceSlug && projectStore.joinedProjects;
-  const favoriteProjects = workspaceSlug && projectStore.favoriteProjects;
-
-  const orderedJoinedProjects: IProject[] | undefined = joinedProjects
-    ? orderArrayBy(joinedProjects, "sort_order", "ascending")
-    : undefined;
-
-  const orderedFavProjects: IProject[] | undefined = favoriteProjects
-    ? orderArrayBy(favoriteProjects, "sort_order", "ascending")
-    : undefined;
+  const isAuthorizedUser = !!currentWorkspaceRole && currentWorkspaceRole >= EUserWorkspaceRoles.MEMBER;
 
   const handleCopyText = (projectId: string) => {
-    const originURL = typeof window !== "undefined" && window.location.origin ? window.location.origin : "";
-    copyTextToClipboard(`${originURL}/${workspaceSlug}/projects/${projectId}/issues`).then(() => {
+    copyUrlToClipboard(`${workspaceSlug}/projects/${projectId}/issues`).then(() => {
       setToastAlert({
         type: "success",
         title: "Link Copied!",
@@ -71,18 +61,18 @@ export const ProjectSidebarList: FC = observer(() => {
 
     if (source.index === destination.index) return;
 
-    const updatedSortOrder = projectStore.orderProjectsWithSortOrder(source.index, destination.index, draggableId);
+    const updatedSortOrder = orderProjectsWithSortOrder(source.index, destination.index, draggableId);
 
-    projectStore
-      .updateProjectView(workspaceSlug.toString(), draggableId, { sort_order: updatedSortOrder })
-      .catch(() => {
-        setToastAlert({
-          type: "error",
-          title: "Error!",
-          message: "Something went wrong. Please try again.",
-        });
+    updateProjectView(workspaceSlug.toString(), draggableId, { sort_order: updatedSortOrder }).catch(() => {
+      setToastAlert({
+        type: "error",
+        title: "Error!",
+        message: "Something went wrong. Please try again.",
       });
+    });
   };
+
+  const isCollapsed = sidebarCollapsed || false;
 
   /**
    * Implementing scroll animation styles based on the scroll length of the container
@@ -107,15 +97,19 @@ export const ProjectSidebarList: FC = observer(() => {
 
   return (
     <>
-      <CreateProjectModal
-        isOpen={isProjectModalOpen}
-        setIsOpen={setIsProjectModalOpen}
-        setToFavorite={isFavoriteProjectCreate}
-        user={user}
-      />
+      {workspaceSlug && (
+        <CreateProjectModal
+          isOpen={isProjectModalOpen}
+          onClose={() => {
+            setIsProjectModalOpen(false);
+          }}
+          setToFavorite={isFavoriteProjectCreate}
+          workspaceSlug={workspaceSlug.toString()}
+        />
+      )}
       <div
         ref={containerRef}
-        className={`h-full overflow-y-auto px-4 space-y-3 pt-3 ${
+        className={`h-full space-y-2 overflow-y-auto px-4 ${
           isScrolled ? "border-t border-custom-sidebar-border-300" : ""
         }`}
       >
@@ -123,58 +117,71 @@ export const ProjectSidebarList: FC = observer(() => {
           <Droppable droppableId="favorite-projects">
             {(provided) => (
               <div ref={provided.innerRef} {...provided.droppableProps}>
-                {orderedFavProjects && orderedFavProjects.length > 0 && (
-                  <Disclosure as="div" className="flex flex-col space-y-2" defaultOpen={true}>
+                {favoriteProjects && favoriteProjects.length > 0 && (
+                  <Disclosure as="div" className="flex flex-col" defaultOpen>
                     {({ open }) => (
                       <>
-                        {!themeStore?.sidebarCollapsed && (
-                          <div className="group flex justify-between items-center text-xs px-1.5 rounded text-custom-sidebar-text-400 hover:bg-custom-sidebar-background-80 w-full">
+                        {!isCollapsed && (
+                          <div className="group flex w-full items-center justify-between rounded p-1.5 text-xs text-custom-sidebar-text-400 hover:bg-custom-sidebar-background-80">
                             <Disclosure.Button
                               as="button"
                               type="button"
-                              className="group flex items-center gap-1 px-1.5 text-xs font-semibold text-custom-sidebar-text-400 text-left hover:bg-custom-sidebar-background-80 rounded w-full whitespace-nowrap"
+                              className="group flex w-full items-center gap-1 whitespace-nowrap rounded px-1.5 text-left text-sm font-semibold text-custom-sidebar-text-400 hover:bg-custom-sidebar-background-80"
                             >
                               Favorites
-                              <Icon
-                                iconName={open ? "arrow_drop_down" : "arrow_right"}
-                                className="group-hover:opacity-100 opacity-0 !text-lg"
-                              />
+                              {open ? (
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              ) : (
+                                <ChevronRight className="h-3.5 w-3.5" />
+                              )}
                             </Disclosure.Button>
-                            <button
-                              className="group-hover:opacity-100 opacity-0"
-                              onClick={() => {
-                                setIsFavoriteProjectCreate(true);
-                                setIsProjectModalOpen(true);
-                              }}
-                            >
-                              <Icon iconName="add" />
-                            </button>
+                            {isAuthorizedUser && (
+                              <button
+                                className="opacity-0 group-hover:opacity-100"
+                                onClick={() => {
+                                  setTrackElement("APP_SIDEBAR_FAVORITES_BLOCK");
+                                  setIsFavoriteProjectCreate(true);
+                                  setIsProjectModalOpen(true);
+                                }}
+                              >
+                                <Plus className="h-3 w-3" />
+                              </button>
+                            )}
                           </div>
                         )}
-                        <Disclosure.Panel as="div" className="space-y-2">
-                          {orderedFavProjects.map((project, index) => (
-                            <Draggable
-                              key={project.id}
-                              draggableId={project.id}
-                              index={index}
-                              isDragDisabled={!project.is_member}
-                            >
-                              {(provided, snapshot) => (
-                                <div ref={provided.innerRef} {...provided.draggableProps}>
-                                  <ProjectSidebarListItem
-                                    key={project.id}
-                                    project={project}
-                                    sidebarCollapse={themeStore?.sidebarCollapsed || false}
-                                    provided={provided}
-                                    snapshot={snapshot}
-                                    handleCopyText={() => handleCopyText(project.id)}
-                                    shortContextMenu
-                                  />
-                                </div>
-                              )}
-                            </Draggable>
-                          ))}
-                        </Disclosure.Panel>
+                        <Transition
+                          enter="transition duration-100 ease-out"
+                          enterFrom="transform scale-95 opacity-0"
+                          enterTo="transform scale-100 opacity-100"
+                          leave="transition duration-75 ease-out"
+                          leaveFrom="transform scale-100 opacity-100"
+                          leaveTo="transform scale-95 opacity-0"
+                        >
+                          <Disclosure.Panel as="div" className="space-y-2">
+                            {favoriteProjects.map((projectId, index) => (
+                              <Draggable
+                                key={projectId}
+                                draggableId={projectId}
+                                index={index}
+                                // FIXME refactor the Draggable to a different component
+                                //isDragDisabled={!project.is_member}
+                              >
+                                {(provided, snapshot) => (
+                                  <div ref={provided.innerRef} {...provided.draggableProps}>
+                                    <ProjectSidebarListItem
+                                      key={projectId}
+                                      projectId={projectId}
+                                      provided={provided}
+                                      snapshot={snapshot}
+                                      handleCopyText={() => handleCopyText(projectId)}
+                                      shortContextMenu
+                                    />
+                                  </div>
+                                )}
+                              </Draggable>
+                            ))}
+                          </Disclosure.Panel>
+                        </Transition>
                         {provided.placeholder}
                       </>
                     )}
@@ -188,32 +195,35 @@ export const ProjectSidebarList: FC = observer(() => {
           <Droppable droppableId="joined-projects">
             {(provided) => (
               <div ref={provided.innerRef} {...provided.droppableProps}>
-                {orderedJoinedProjects && orderedJoinedProjects.length > 0 && (
-                  <Disclosure as="div" className="flex flex-col space-y-2" defaultOpen={true}>
+                {joinedProjects && joinedProjects.length > 0 && (
+                  <Disclosure as="div" className="flex flex-col" defaultOpen>
                     {({ open }) => (
                       <>
-                        {!themeStore?.sidebarCollapsed && (
-                          <div className="group flex justify-between items-center text-xs px-1.5 rounded text-custom-sidebar-text-400 hover:bg-custom-sidebar-background-80 w-full">
+                        {!isCollapsed && (
+                          <div className="group flex w-full items-center justify-between rounded p-1.5 text-xs text-custom-sidebar-text-400 hover:bg-custom-sidebar-background-80">
                             <Disclosure.Button
                               as="button"
                               type="button"
-                              className="flex items-center gap-1 font-semibold text-left whitespace-nowrap"
+                              className="group flex w-full items-center gap-1 whitespace-nowrap rounded px-1.5 text-left text-sm font-semibold text-custom-sidebar-text-400 hover:bg-custom-sidebar-background-80"
                             >
-                              Projects
-                              <Icon
-                                iconName={open ? "arrow_drop_down" : "arrow_right"}
-                                className="group-hover:opacity-100 opacity-0 !text-lg"
-                              />
+                              Your projects
+                              {open ? (
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              ) : (
+                                <ChevronRight className="h-3.5 w-3.5" />
+                              )}
                             </Disclosure.Button>
-                            <button
-                              className="group-hover:opacity-100 opacity-0"
-                              onClick={() => {
-                                setIsFavoriteProjectCreate(false);
-                                setIsProjectModalOpen(true);
-                              }}
-                            >
-                              <Icon iconName="add" />
-                            </button>
+                            {isAuthorizedUser && (
+                              <button
+                                className="opacity-0 group-hover:opacity-100"
+                                onClick={() => {
+                                  setIsFavoriteProjectCreate(false);
+                                  setIsProjectModalOpen(true);
+                                }}
+                              >
+                                <Plus className="h-3 w-3" />
+                              </button>
+                            )}
                           </div>
                         )}
                         <Transition
@@ -225,17 +235,16 @@ export const ProjectSidebarList: FC = observer(() => {
                           leaveTo="transform scale-95 opacity-0"
                         >
                           <Disclosure.Panel as="div" className="space-y-2">
-                            {orderedJoinedProjects.map((project, index) => (
-                              <Draggable key={project.id} draggableId={project.id} index={index}>
+                            {joinedProjects.map((projectId, index) => (
+                              <Draggable key={projectId} draggableId={projectId} index={index}>
                                 {(provided, snapshot) => (
                                   <div ref={provided.innerRef} {...provided.draggableProps}>
                                     <ProjectSidebarListItem
-                                      key={project.id}
-                                      project={project}
-                                      sidebarCollapse={themeStore?.sidebarCollapsed || false}
+                                      key={projectId}
+                                      projectId={projectId}
                                       provided={provided}
                                       snapshot={snapshot}
-                                      handleCopyText={() => handleCopyText(project.id)}
+                                      handleCopyText={() => handleCopyText(projectId)}
                                     />
                                   </div>
                                 )}
@@ -253,19 +262,17 @@ export const ProjectSidebarList: FC = observer(() => {
           </Droppable>
         </DragDropContext>
 
-        {joinedProjects && joinedProjects.length === 0 && (
+        {isAuthorizedUser && joinedProjects && joinedProjects.length === 0 && (
           <button
             type="button"
             className="flex w-full items-center gap-2 px-3 text-sm text-custom-sidebar-text-200"
             onClick={() => {
-              const e = new KeyboardEvent("keydown", {
-                key: "p",
-              });
-              document.dispatchEvent(e);
+              setTrackElement("APP_SIDEBAR");
+              toggleCreateProjectModal(true);
             }}
           >
-            <PlusIcon className="h-5 w-5" />
-            {!themeStore?.sidebarCollapsed && "Add Project"}
+            <Plus className="h-5 w-5" />
+            {!isCollapsed && "Add Project"}
           </button>
         )}
       </div>
